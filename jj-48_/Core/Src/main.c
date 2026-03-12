@@ -118,7 +118,7 @@ int main(void)
       uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
       if (btn && !last_btn) {
         DrumSynth_Trigger(next_drum ? DRUM_HIHAT : DRUM_SNARE);
-        next_drum = 1U - next_drum;
+        next_drum ^= 1;   /* toggle 0 <-> 1 */
       }
       last_btn = btn;
       HAL_Delay(10);
