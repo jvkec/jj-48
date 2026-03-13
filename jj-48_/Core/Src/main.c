@@ -40,7 +40,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-DAC_HandleTypeDef hdac;
+I2S_HandleTypeDef hi2s3;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim6;
 
@@ -49,16 +50,19 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
-
+#define AUDIO_SAMPLE_RATE_HZ   16000U
+#define AUDIO_FRAMES_PER_BUF   512U  /* stereo frames; must be even */
+uint16_t i2s_audio_buf[AUDIO_FRAMES_PER_BUF * 2U]; /* L,R interleaved for Philips I2S */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
-static void MX_DAC_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_I2S3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -96,16 +100,25 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
-  MX_DAC_Init();
   MX_TIM6_Init();
+  MX_I2S3_Init();
   /* USER CODE BEGIN 2 */
   DrumSynth_Init();
-  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
-  /* TIM6 @ 16 kHz for DAC sample rate (APB1 timer clk = 84 MHz: 84e6/16000 - 1 = 5249) */
-  __HAL_TIM_SET_AUTORELOAD(&htim6, 5249);
-  HAL_TIM_Base_Start_IT(&htim6);
+  /* Start I2S DMA streaming; buffer content will be generated in DMA callbacks */
+  for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
+    uint32_t dac12 = DrumSynth_GetNextSample();
+    int32_t s = (int32_t)dac12 - 2048;
+    s *= 16;
+    if (s > 32767) s = 32767;
+    if (s < -32768) s = -32768;
+    uint16_t s16 = (uint16_t)(int16_t)s;
+    i2s_audio_buf[i * 2U]      = s16;
+    i2s_audio_buf[i * 2U + 1U] = s16;
+  }
+  (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -124,9 +137,9 @@ int main(void)
       HAL_Delay(10);
     }
   }
-  /* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
-  /* USER CODE BEGIN 3 */
+    /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
 }
 
@@ -177,42 +190,36 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief DAC Initialization Function
+  * @brief I2S3 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_DAC_Init(void)
+static void MX_I2S3_Init(void)
 {
 
-  /* USER CODE BEGIN DAC_Init 0 */
+  /* USER CODE BEGIN I2S3_Init 0 */
 
-  /* USER CODE END DAC_Init 0 */
+  /* USER CODE END I2S3_Init 0 */
 
-  DAC_ChannelConfTypeDef sConfig = {0};
+  /* USER CODE BEGIN I2S3_Init 1 */
 
-  /* USER CODE BEGIN DAC_Init 1 */
-
-  /* USER CODE END DAC_Init 1 */
-
-  /** DAC Initialization
-  */
-  hdac.Instance = DAC;
-  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  /* USER CODE END I2S3_Init 1 */
+  hi2s3.Instance = SPI3;
+  hi2s3.Init.Mode = I2S_MODE_MASTER_TX;
+  hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s3.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_16K;
+  hi2s3.Init.CPOL = I2S_CPOL_LOW;
+  hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s3) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN I2S3_Init 2 */
 
-  /** DAC channel OUT1 config
-  */
-  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
-  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
-  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN DAC_Init 2 */
-
-  /* USER CODE END DAC_Init 2 */
+  /* USER CODE END I2S3_Init 2 */
 
 }
 
@@ -323,6 +330,22 @@ static void MX_USB_OTG_FS_PCD_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -334,10 +357,10 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
@@ -374,11 +397,38 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+static inline uint16_t DrumSample_To_I2S16(uint32_t dac12)
 {
-  if (htim->Instance == TIM6) {
-    uint32_t sample = DrumSynth_GetNextSample();
-    HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, (uint32_t)sample);
+  /* drum_synth gives 0..4095, centered at 2048. Convert to signed 16-bit. */
+  int32_t s = (int32_t)dac12 - 2048;
+  s *= 16; /* 12-bit to 16-bit-ish scaling */
+  if (s > 32767) s = 32767;
+  if (s < -32768) s = -32768;
+  return (uint16_t)(int16_t)s;
+}
+
+static void Fill_I2S_Frames(uint32_t start_frame, uint32_t frame_count)
+{
+  for (uint32_t i = 0U; i < frame_count; i++) {
+    uint32_t dac12 = DrumSynth_GetNextSample();
+    uint16_t s16 = DrumSample_To_I2S16(dac12);
+    uint32_t base = (start_frame + i) * 2U;
+    i2s_audio_buf[base]      = s16; /* left */
+    i2s_audio_buf[base + 1U] = s16; /* right (mono copy) */
+  }
+}
+
+void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  if (hi2s->Instance == SPI3) {
+    Fill_I2S_Frames(0U, AUDIO_FRAMES_PER_BUF / 2U);
+  }
+}
+
+void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  if (hi2s->Instance == SPI3) {
+    Fill_I2S_Frames(AUDIO_FRAMES_PER_BUF / 2U, AUDIO_FRAMES_PER_BUF / 2U);
   }
 }
 /* USER CODE END 4 */

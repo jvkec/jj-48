@@ -9,8 +9,8 @@
 #include <string.h>
 
 /* Private defines: envelope times at 16 kHz */
-#define SNARE_DECAY_MS    6U
-#define HIHAT_DECAY_MS    2U
+#define SNARE_DECAY_MS    80U
+#define HIHAT_DECAY_MS    30U
 #define SAMPLES_PER_MS    (DRUM_SAMPLE_RATE_HZ / 1000U)
 #define SNARE_DECAY_SAMPLES  (SNARE_DECAY_MS * SAMPLES_PER_MS)
 #define HIHAT_DECAY_SAMPLES  (HIHAT_DECAY_MS * SAMPLES_PER_MS)
