@@ -107,16 +107,10 @@ int main(void)
   MX_I2S3_Init();
   /* USER CODE BEGIN 2 */
   DrumSynth_Init();
-  /* Start I2S DMA streaming; buffer content will be generated in DMA callbacks */
   for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
-    uint32_t dac12 = DrumSynth_GetNextSample();
-    int32_t s = (int32_t)dac12 - 2048;
-    s *= 16;
-    if (s > 32767) s = 32767;
-    if (s < -32768) s = -32768;
-    uint16_t s16 = (uint16_t)(int16_t)s;
-    i2s_audio_buf[i * 2U]      = s16;
-    i2s_audio_buf[i * 2U + 1U] = s16;
+    uint16_t s = (uint16_t)DrumSynth_GetNextSample();
+    i2s_audio_buf[i * 2U]      = s;
+    i2s_audio_buf[i * 2U + 1U] = s;
   }
   (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
   /* USER CODE END 2 */
@@ -125,13 +119,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   {
     uint8_t last_btn = 1;
-    uint8_t next_drum = 0; /* 0 = snare, 1 = hi-hat */
+    uint8_t next_drum = 0;
     while (1)
     {
       uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
       if (btn && !last_btn) {
-        DrumSynth_Trigger(next_drum ? DRUM_HIHAT : DRUM_SNARE);
-        next_drum ^= 1;   /* toggle 0 <-> 1 */
+        DrumSynth_Trigger((DrumType_t)next_drum);
+        next_drum = (next_drum + 1U) % DRUM_COUNT;
       }
       last_btn = btn;
       HAL_Delay(10);
@@ -397,24 +391,13 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static inline uint16_t DrumSample_To_I2S16(uint32_t dac12)
-{
-  /* drum_synth gives 0..4095, centered at 2048. Convert to signed 16-bit. */
-  int32_t s = (int32_t)dac12 - 2048;
-  s *= 16; /* 12-bit to 16-bit-ish scaling */
-  if (s > 32767) s = 32767;
-  if (s < -32768) s = -32768;
-  return (uint16_t)(int16_t)s;
-}
-
 static void Fill_I2S_Frames(uint32_t start_frame, uint32_t frame_count)
 {
   for (uint32_t i = 0U; i < frame_count; i++) {
-    uint32_t dac12 = DrumSynth_GetNextSample();
-    uint16_t s16 = DrumSample_To_I2S16(dac12);
+    uint16_t s = (uint16_t)DrumSynth_GetNextSample();
     uint32_t base = (start_frame + i) * 2U;
-    i2s_audio_buf[base]      = s16; /* left */
-    i2s_audio_buf[base + 1U] = s16; /* right (mono copy) */
+    i2s_audio_buf[base]      = s;
+    i2s_audio_buf[base + 1U] = s;
   }
 }
 

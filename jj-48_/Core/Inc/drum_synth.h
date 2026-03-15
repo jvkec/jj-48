@@ -1,8 +1,8 @@
 /**
   ******************************************************************************
   * @file    drum_synth.h
-  * @brief   Snare and hi-hat waveform generation with ADSR for DAC output.
-  *          Milestone 1 - John's part: verify on scope at PA4 (DAC_OUT1).
+  * @brief   4-voice drum synthesizer for I2S output via MAX98357.
+  *          Kick, snare, hi-hat, clap with ADSR/exponential envelopes.
   ******************************************************************************
   */
 
@@ -15,40 +15,34 @@ extern "C" {
 
 #include <stdint.h>
 
-/** Drum types for Milestone 1 */
 typedef enum {
-  DRUM_SNARE = 0,
-  DRUM_HIHAT = 1,
+  DRUM_KICK  = 0,
+  DRUM_SNARE = 1,
+  DRUM_HIHAT = 2,
+  DRUM_CLAP  = 3,
   DRUM_COUNT
 } DrumType_t;
 
-/** ADSR envelope parameters (times in samples at SAMPLE_RATE) */
-typedef struct {
-  uint32_t attack_samples;
-  uint32_t decay_samples;
-  uint32_t sustain_level;   /* 0..4095 */
-  uint32_t release_samples;
-} ADSR_Params_t;
-
-/** Sample rate for DAC output (Hz). TIM6 must be configured to this rate. */
+/** Sample rate shared with I2S peripheral — TIM6 or I2S clock must match. */
 #define DRUM_SAMPLE_RATE_HZ  16000U
 
 /**
-  * @brief  Initialize drum synth (noise seed, envelope state).
+  * @brief  Initialise all voice state and noise seed.  Call once at startup.
   */
 void DrumSynth_Init(void);
 
 /**
-  * @brief  Trigger a drum hit. Envelope runs until release finishes.
-  * @param  drum  DRUM_SNARE or DRUM_HIHAT
+  * @brief  Trigger a drum hit.  Safe to re-trigger while a voice is active.
+  * @param  drum  One of DRUM_KICK, DRUM_SNARE, DRUM_HIHAT, DRUM_CLAP.
   */
 void DrumSynth_Trigger(DrumType_t drum);
 
 /**
-  * @brief  Get next 12-bit sample (0..4095) for DAC. Call from TIM6 update IRQ.
-  * @retval DAC value; 2048 when idle (mid-scale for minimal DC).
+  * @brief  Return the next mixed signed 16-bit sample for I2S.
+  *         Call once per sample period from the DMA half/complete callback.
+  * @retval Signed 16-bit PCM value ready for I2S (Philips, 16-bit).
   */
-uint32_t DrumSynth_GetNextSample(void);
+int16_t DrumSynth_GetNextSample(void);
 
 #ifdef __cplusplus
 }
