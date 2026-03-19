@@ -6,3 +6,6 @@ BCLK -> PA10
 DIN -> PA12
 GND -> GND
 VIN -> 3V3
+
+Potentiometer:
+ADC1 -> PA3

@@ -40,6 +40,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi3_tx;
 
@@ -63,6 +65,7 @@ static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_I2S3_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -105,6 +108,7 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   MX_TIM6_Init();
   MX_I2S3_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   DrumSynth_Init();
   for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
@@ -120,15 +124,62 @@ int main(void)
   {
     uint8_t last_btn = 1;
     uint8_t next_drum = 0;
+    /* Concurrency smoke test:
+     * exercise multi-voice overlap before keypad/OLED integration. */
+    const uint32_t CONC_TEST_PERIOD_MS = 250U;
+    const uint32_t CONC_TEST_TOTAL_MS  = 15000U;
+    uint32_t conc_last_ms = HAL_GetTick();
+    uint32_t conc_end_ms  = conc_last_ms + CONC_TEST_TOTAL_MS;
+    uint32_t conc_step    = 0U;
+    uint8_t  conc_done    = 0U;
+
     while (1)
     {
       uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
       if (btn && !last_btn) {
+        /* Manual trigger: fire 2 voices simultaneously. */
+        uint8_t other = (uint8_t)((next_drum + 2U) % DRUM_COUNT);
         DrumSynth_Trigger((DrumType_t)next_drum);
+        DrumSynth_Trigger((DrumType_t)other);
         next_drum = (next_drum + 1U) % DRUM_COUNT;
       }
       last_btn = btn;
-      HAL_Delay(10);
+
+      /* Automatic overlap test (runs for a short window after boot). */
+      if (!conc_done) {
+        uint32_t now_ms = HAL_GetTick();
+
+        if ((int32_t)(now_ms - conc_end_ms) >= 0) {
+          conc_done = 1U;
+        } else if ((int32_t)(now_ms - conc_last_ms) >= (int32_t)CONC_TEST_PERIOD_MS) {
+          conc_last_ms = now_ms;
+
+          /* Step through patterns to cover 2-voice and 4-voice overlap. */
+          switch (conc_step) {
+            case 0U:
+              DrumSynth_Trigger(DRUM_SNARE);
+              DrumSynth_Trigger(DRUM_HIHAT);
+              break;
+            case 1U:
+              DrumSynth_Trigger(DRUM_KICK);
+              DrumSynth_Trigger(DRUM_HIHAT);
+              break;
+            case 2U:
+              DrumSynth_Trigger(DRUM_CLAP);
+              DrumSynth_Trigger(DRUM_SNARE);
+              break;
+            default: /* 3U */
+              DrumSynth_Trigger(DRUM_KICK);
+              DrumSynth_Trigger(DRUM_SNARE);
+              DrumSynth_Trigger(DRUM_HIHAT);
+              DrumSynth_Trigger(DRUM_CLAP);
+              break;
+          }
+          conc_step = (conc_step + 1U) % 4U;
+        }
+      }
+
+      HAL_Delay(1);
     }
   }
     /* USER CODE END WHILE */
@@ -181,6 +232,58 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -351,10 +454,10 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
