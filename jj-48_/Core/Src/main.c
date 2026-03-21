@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "drum_synth.h"
+#include "bpm_control.h"
+#include "sequencer.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +34,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+/* Set to 0 to disable periodic printf of ADC (USART3 / ST-Link VCP @ 115200) */
+#define ADC_DEBUG_PRINT  1
+#define ADC_DEBUG_PRINT_INTERVAL_MS  250U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -72,6 +77,16 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/**
+ * @brief Retarget printf() to USART3 (ST-Link virtual COM port, 115200 8N1).
+ */
+int __io_putchar(int ch)
+{
+  uint8_t c = (uint8_t)ch;
+  (void)HAL_UART_Transmit(&huart3, &c, 1U, HAL_MAX_DELAY);
+  return ch;
+}
 
 /* USER CODE END 0 */
 
@@ -117,6 +132,10 @@ int main(void)
     i2s_audio_buf[i * 2U + 1U] = s;
   }
   (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
+  BpmControl_Init(&htim6, &hadc1);
+  Sequencer_InitDemoPattern();
+  BpmControl_ApplyBpm(BPM_DEFAULT);
+  (void)HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -124,20 +143,15 @@ int main(void)
   {
     uint8_t last_btn = 1;
     uint8_t next_drum = 0;
-    /* Concurrency smoke test:
-     * exercise multi-voice overlap before keypad/OLED integration. */
-    const uint32_t CONC_TEST_PERIOD_MS = 250U;
-    const uint32_t CONC_TEST_TOTAL_MS  = 15000U;
-    uint32_t conc_last_ms = HAL_GetTick();
-    uint32_t conc_end_ms  = conc_last_ms + CONC_TEST_TOTAL_MS;
-    uint32_t conc_step    = 0U;
-    uint8_t  conc_done    = 0U;
+#if ADC_DEBUG_PRINT
+    uint32_t adc_dbg_last_ms = 0U;
+#endif
 
     while (1)
     {
       uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
       if (btn && !last_btn) {
-        /* Manual trigger: fire 2 voices simultaneously. */
+        /* Manual test: two voices at once */
         uint8_t other = (uint8_t)((next_drum + 2U) % DRUM_COUNT);
         DrumSynth_Trigger((DrumType_t)next_drum);
         DrumSynth_Trigger((DrumType_t)other);
@@ -145,39 +159,21 @@ int main(void)
       }
       last_btn = btn;
 
-      /* Automatic overlap test (runs for a short window after boot). */
-      if (!conc_done) {
+      BpmControl_Poll();
+
+#if ADC_DEBUG_PRINT
+      {
         uint32_t now_ms = HAL_GetTick();
-
-        if ((int32_t)(now_ms - conc_end_ms) >= 0) {
-          conc_done = 1U;
-        } else if ((int32_t)(now_ms - conc_last_ms) >= (int32_t)CONC_TEST_PERIOD_MS) {
-          conc_last_ms = now_ms;
-
-          /* Step through patterns to cover 2-voice and 4-voice overlap. */
-          switch (conc_step) {
-            case 0U:
-              DrumSynth_Trigger(DRUM_SNARE);
-              DrumSynth_Trigger(DRUM_HIHAT);
-              break;
-            case 1U:
-              DrumSynth_Trigger(DRUM_KICK);
-              DrumSynth_Trigger(DRUM_HIHAT);
-              break;
-            case 2U:
-              DrumSynth_Trigger(DRUM_CLAP);
-              DrumSynth_Trigger(DRUM_SNARE);
-              break;
-            default: /* 3U */
-              DrumSynth_Trigger(DRUM_KICK);
-              DrumSynth_Trigger(DRUM_SNARE);
-              DrumSynth_Trigger(DRUM_HIHAT);
-              DrumSynth_Trigger(DRUM_CLAP);
-              break;
-          }
-          conc_step = (conc_step + 1U) % 4U;
+        if ((uint32_t)(now_ms - adc_dbg_last_ms) >= ADC_DEBUG_PRINT_INTERVAL_MS) {
+          adc_dbg_last_ms = now_ms;
+          uint32_t raw = BpmControl_ReadPotRaw();
+          uint16_t bpm_map = BpmControl_MapRawToBpm(raw);
+          uint16_t bpm_applied = BpmControl_GetLastAppliedBpm();
+          printf("ADC_raw=%lu  BPM_mapped=%u  BPM_applied=%u\r\n",
+                 (unsigned long)raw, (unsigned)bpm_map, (unsigned)bpm_applied);
         }
       }
+#endif
 
       HAL_Delay(1);
     }
@@ -275,6 +271,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = 1;
+  /* Match lab reference (adc_reference): ADC_SAMPLETIME_3CYCLES. Use 56+ if noisy on breadboard. */
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -338,9 +335,10 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 0;
+  /* 84 MHz timer clock / 8400 = 10 kHz; ARR matches BPM via BpmControl_ApplyBpm() */
+  htim6.Init.Prescaler = TIM6_PSC_FOR_10KHZ;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
+  htim6.Init.Period = TIM6_ARR_FOR_BPM(BPM_DEFAULT);
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
