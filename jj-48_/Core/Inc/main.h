@@ -67,6 +67,7 @@ void Error_Handler(void);
 #define LD1_GPIO_Port GPIOB
 #define COL1_Pin GPIO_PIN_12
 #define COL1_GPIO_Port GPIOF
+#define COL1_EXTI_IRQn EXTI15_10_IRQn
 #define ROW3_Pin GPIO_PIN_14
 #define ROW3_GPIO_Port GPIOF
 #define ROW1_Pin GPIO_PIN_15
@@ -83,8 +84,10 @@ void Error_Handler(void);
 #define STLK_TX_GPIO_Port GPIOD
 #define COL3_Pin GPIO_PIN_14
 #define COL3_GPIO_Port GPIOD
+#define COL3_EXTI_IRQn EXTI15_10_IRQn
 #define COL2_Pin GPIO_PIN_15
 #define COL2_GPIO_Port GPIOD
+#define COL2_EXTI_IRQn EXTI15_10_IRQn
 #define USB_PowerSwitchOn_Pin GPIO_PIN_6
 #define USB_PowerSwitchOn_GPIO_Port GPIOG
 #define USB_OverCurrent_Pin GPIO_PIN_7
