@@ -74,15 +74,15 @@ static void MX_I2S3_Init(void);
 void print_msg(char * msg) {
 	HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
 }
-int8_t current_row = -1, current_col = -1;
-uint8_t col_interrupt_fired = -1;
+
+int8_t current_col = -1;
+char key_pressed = '\0';
 char keypad[4][3] = {
     {'1','2','3'},
     {'4','5','6'},
     {'7','8','9'},
     {'*','0','#'}
 };
-
 
 // Keypad Row pins and ports
 GPIO_TypeDef* keypad_row_ports[4] = {ROW1_GPIO_Port, ROW2_GPIO_Port, ROW3_GPIO_Port, ROW4_GPIO_Port};
@@ -92,22 +92,23 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
-// For simple debouncing
-
-uint32_t HAL_GetTick();  // returns system tick in ms
-
 void scan_keypad(void) {
 	for(uint8_t row = 0; row < 4; row++) {
 		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_SET);
 		if(current_col != -1) {
 			// current_col will take a value when interrupt happens
+			key_pressed = keypad[row][current_col];
+
+			// update UI based on key pressed
+			// updateUI(key_pressed)
+
 			char message[100];
-			sprintf(message, "row: %d, current_col: %d, Key: %c\n", row, current_col, keypad[row][current_col]);
+			sprintf(message, "row: %d, current_col: %d, Key: %c\n", row, current_col, key_pressed);
 			print_msg(message);
 			current_col = -1; // clear interrupt flag current_col
 		}
 		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_RESET);
-		HAL_Delay(50);
+		HAL_Delay(10);
 	}
 }
 /* USER CODE END 0 */
