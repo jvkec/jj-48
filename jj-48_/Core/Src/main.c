@@ -74,7 +74,7 @@ static void MX_I2S3_Init(void);
 void print_msg(char * msg) {
 	HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
 }
-int8_t current_row = -1, current_col = -1, detected_row = -1;
+int8_t current_row = -1, current_col = -1;
 uint8_t col_interrupt_fired = -1;
 char keypad[4][3] = {
     {'1','2','3'},
@@ -163,19 +163,25 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  {
 		uint8_t last_btn = 1;
     uint8_t next_drum = 0;
 
     while (1)
     {
     	scan_keypad();
+
+      uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
+      if (btn && !last_btn) {
+        DrumSynth_Trigger((DrumType_t)next_drum);
+        next_drum = (next_drum + 1U) % DRUM_COUNT;
+      }
+      last_btn = btn;
     	HAL_Delay(10);
     }
-  }
-    /* USER CODE END WHILE */
+	/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+	/* USER CODE BEGIN 3 */
+
   /* USER CODE END 3 */
 }
 

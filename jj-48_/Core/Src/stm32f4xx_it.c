@@ -60,8 +60,6 @@ extern TIM_HandleTypeDef htim6;
 /* USER CODE BEGIN EV */
 extern void print_msg(char * msg);
 extern int8_t current_col;
-extern int8_t detected_row;
-extern int8_t current_row;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -227,7 +225,6 @@ void EXTI15_10_IRQHandler(void)
 	if (__HAL_GPIO_EXTI_GET_IT(COL1_Pin) != RESET) {
 		if ((now - last_time_col[0]) >= DEBOUNCE_MS) {
 			last_time_col[0] = now;
-			detected_row = current_row;
 			current_col = 0;
 			print_msg("COL1 Interrupt\r\n");
 		} else {
@@ -239,7 +236,6 @@ void EXTI15_10_IRQHandler(void)
 	if (__HAL_GPIO_EXTI_GET_IT(COL2_Pin) != RESET) {
 		if ((now - last_time_col[1]) >= DEBOUNCE_MS) {
 			last_time_col[1] = now;
-			detected_row = current_row;
 			current_col = 1;
 			print_msg("COL2 Interrupt\r\n");
 		} else {
@@ -251,7 +247,6 @@ void EXTI15_10_IRQHandler(void)
 	if (__HAL_GPIO_EXTI_GET_IT(COL3_Pin) != RESET) {
 		if ((now - last_time_col[2]) >= DEBOUNCE_MS) {
 			last_time_col[2] = now;
-			detected_row = current_row;
 			current_col = 2;
 			print_msg("COL3 Interrupt\r\n");
 		} else {
