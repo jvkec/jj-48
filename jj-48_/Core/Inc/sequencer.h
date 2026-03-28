@@ -14,6 +14,7 @@
 extern volatile uint8_t pattern[DRUM_COUNT][SEQUENCER_NUM_STEPS];
 extern volatile uint8_t current_step;
 
-void Sequencer_InitDemoPattern(void);
+/** Zero the step grid and reset the playhead (no steps armed). */
+void Sequencer_Init(void);
 
 #endif /* SEQUENCER_H */

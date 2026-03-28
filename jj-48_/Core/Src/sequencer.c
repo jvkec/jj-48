@@ -8,19 +8,12 @@
 volatile uint8_t pattern[DRUM_COUNT][SEQUENCER_NUM_STEPS];
 volatile uint8_t current_step;
 
-void Sequencer_InitDemoPattern(void)
+void Sequencer_Init(void)
 {
   for (uint32_t t = 0U; t < (uint32_t)DRUM_COUNT; t++) {
     for (uint32_t s = 0U; s < SEQUENCER_NUM_STEPS; s++) {
       pattern[t][s] = 0U;
     }
-  }
-  pattern[DRUM_KICK][0]  = 1U;
-  pattern[DRUM_KICK][4]  = 1U;
-  pattern[DRUM_SNARE][2] = 1U;
-  pattern[DRUM_SNARE][6] = 1U;
-  for (uint32_t s = 0U; s < SEQUENCER_NUM_STEPS; s++) {
-    pattern[DRUM_HIHAT][s] = 1U;
   }
   current_step = 0U;
 }

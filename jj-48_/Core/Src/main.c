@@ -24,7 +24,6 @@
 #include "drum_synth.h"
 #include "bpm_control.h"
 #include "sequencer.h"
-#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,9 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* Set to 0 to disable periodic printf of ADC (USART3 / ST-Link VCP @ 115200) */
-#define ADC_DEBUG_PRINT  1
-#define ADC_DEBUG_PRINT_INTERVAL_MS  250U
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -77,16 +74,6 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-/**
- * @brief Retarget printf() to USART3 (ST-Link virtual COM port, 115200 8N1).
- */
-int __io_putchar(int ch)
-{
-  uint8_t c = (uint8_t)ch;
-  (void)HAL_UART_Transmit(&huart3, &c, 1U, HAL_MAX_DELAY);
-  return ch;
-}
 
 /* USER CODE END 0 */
 
@@ -133,54 +120,21 @@ int main(void)
   }
   (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
   BpmControl_Init(&htim6, &hadc1);
-  Sequencer_InitDemoPattern();
+  Sequencer_Init();
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  while (1)
   {
-    uint8_t last_btn = 1;
-    uint8_t next_drum = 0;
-#if ADC_DEBUG_PRINT
-    uint32_t adc_dbg_last_ms = 0U;
-#endif
-
-    while (1)
-    {
-      uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
-      if (btn && !last_btn) {
-        /* Manual test: two voices at once */
-        uint8_t other = (uint8_t)((next_drum + 2U) % DRUM_COUNT);
-        DrumSynth_Trigger((DrumType_t)next_drum);
-        DrumSynth_Trigger((DrumType_t)other);
-        next_drum = (next_drum + 1U) % DRUM_COUNT;
-      }
-      last_btn = btn;
-
-      BpmControl_Poll();
-
-#if ADC_DEBUG_PRINT
-      {
-        uint32_t now_ms = HAL_GetTick();
-        if ((uint32_t)(now_ms - adc_dbg_last_ms) >= ADC_DEBUG_PRINT_INTERVAL_MS) {
-          adc_dbg_last_ms = now_ms;
-          uint32_t raw = BpmControl_ReadPotRaw();
-          uint16_t bpm_map = BpmControl_MapRawToBpm(raw);
-          uint16_t bpm_applied = BpmControl_GetLastAppliedBpm();
-          printf("ADC_raw=%lu  BPM_mapped=%u  BPM_applied=%u\r\n",
-                 (unsigned long)raw, (unsigned)bpm_map, (unsigned)bpm_applied);
-        }
-      }
-#endif
-
-      HAL_Delay(1);
-    }
-  }
+    BpmControl_Poll();
+    HAL_Delay(1);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+  }
   /* USER CODE END 3 */
 }
 
