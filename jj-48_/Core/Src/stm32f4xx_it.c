@@ -31,7 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define DEBOUNCE_MS 500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -41,7 +41,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+uint32_t last_time_col[3] = {0, 0, 0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,7 +58,8 @@
 extern DMA_HandleTypeDef hdma_spi3_tx;
 extern TIM_HandleTypeDef htim6;
 /* USER CODE BEGIN EV */
-
+extern void print_msg(char * msg);
+extern int8_t current_col;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -211,6 +212,62 @@ void DMA1_Stream5_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Stream5_IRQn 1 */
 
   /* USER CODE END DMA1_Stream5_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI line[15:10] interrupts.
+  */
+void EXTI15_10_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
+	uint32_t now = HAL_GetTick();
+
+	if (__HAL_GPIO_EXTI_GET_IT(COL1_Pin) != RESET) {
+		if ((now - last_time_col[0]) >= DEBOUNCE_MS) {
+			last_time_col[0] = now;
+			current_col = 0;
+			print_msg("COL1 Interrupt\r\n");
+		} else {
+			print_msg("debounce1\r\n");
+		}
+		__HAL_GPIO_EXTI_CLEAR_IT(COL1_Pin);
+	}
+
+	if (__HAL_GPIO_EXTI_GET_IT(COL2_Pin) != RESET) {
+		if ((now - last_time_col[1]) >= DEBOUNCE_MS) {
+			last_time_col[1] = now;
+			current_col = 1;
+			print_msg("COL2 Interrupt\r\n");
+		} else {
+			print_msg("debounce2\r\n");
+		}
+		__HAL_GPIO_EXTI_CLEAR_IT(COL2_Pin);
+	}
+
+	if (__HAL_GPIO_EXTI_GET_IT(COL3_Pin) != RESET) {
+		if ((now - last_time_col[2]) >= DEBOUNCE_MS) {
+			last_time_col[2] = now;
+			current_col = 2;
+			print_msg("COL3 Interrupt\r\n");
+		} else {
+			print_msg("debounce3\r\n");
+		}
+		__HAL_GPIO_EXTI_CLEAR_IT(COL3_Pin);
+	}
+
+  if (__HAL_GPIO_EXTI_GET_FLAG(USER_Btn_Pin)) {
+		print_msg("User Button Pressed\r\n");
+		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+	}
+
+  /* USER CODE END EXTI15_10_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(COL1_Pin);
+  HAL_GPIO_EXTI_IRQHandler(USER_Btn_Pin);
+  HAL_GPIO_EXTI_IRQHandler(COL3_Pin);
+  HAL_GPIO_EXTI_IRQHandler(COL2_Pin);
+  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
+
+  /* USER CODE END EXTI15_10_IRQn 1 */
 }
 
 /**

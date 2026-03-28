@@ -9,3 +9,12 @@ VIN -> 3V3
 
 Potentiometer:
 ADC1 -> PA3
+
+Current pinouts for Keypad:
+ROW1 -> PF15
+ROW2 -> PE13 
+ROW3 -> PF14
+ROW4 -> PE11 
+COL1 -> PF12
+COL2 -> PD15 
+COL3 -> PD14 

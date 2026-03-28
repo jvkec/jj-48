@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
 #include "drum_synth.h"
 #include "bpm_control.h"
 #include "sequencer.h"
@@ -74,7 +76,46 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void print_msg(char * msg) {
+	HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
+}
 
+int8_t current_col = -1;
+char key_pressed = '\0';
+char keypad[4][3] = {
+    {'1','2','3'},
+    {'4','5','6'},
+    {'7','8','9'},
+    {'*','0','#'}
+};
+
+// Keypad Row pins and ports
+GPIO_TypeDef* keypad_row_ports[4] = {ROW1_GPIO_Port, ROW2_GPIO_Port, ROW3_GPIO_Port, ROW4_GPIO_Port};
+uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
+
+// Column pins and ports
+GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
+uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
+
+void scan_keypad(void) {
+	for(uint8_t row = 0; row < 4; row++) {
+		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_SET);
+		if(current_col != -1) {
+			// current_col will take a value when interrupt happens
+			key_pressed = keypad[row][current_col];
+
+			// update UI based on key pressed
+			// updateUI(key_pressed)
+
+			char message[100];
+			sprintf(message, "row: %d, current_col: %d, Key: %c\n", row, current_col, key_pressed);
+			print_msg(message);
+			current_col = -1; // clear interrupt flag current_col
+		}
+		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_RESET);
+		HAL_Delay(10);
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -112,6 +153,12 @@ int main(void)
   MX_I2S3_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ROW2_GPIO_Port, ROW2_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ROW3_GPIO_Port, ROW3_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(ROW4_GPIO_Port, ROW4_Pin, GPIO_PIN_SET);
+
   DrumSynth_Init();
   for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
     uint16_t s = (uint16_t)DrumSynth_GetNextSample();
@@ -135,6 +182,25 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
   }
+		uint8_t last_btn = 1;
+    uint8_t next_drum = 0;
+
+    while (1)
+    {
+    	scan_keypad();
+
+      uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
+      if (btn && !last_btn) {
+        DrumSynth_Trigger((DrumType_t)next_drum);
+        next_drum = (next_drum + 1U) % DRUM_COUNT;
+      }
+      last_btn = btn;
+    	HAL_Delay(10);
+    }
+	/* USER CODE END WHILE */
+
+	/* USER CODE BEGIN 3 */
+
   /* USER CODE END 3 */
 }
 
@@ -408,11 +474,19 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOF, ROW3_Pin|ROW1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, ROW4_Pin|ROW2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(USB_PowerSwitchOn_GPIO_Port, USB_PowerSwitchOn_Pin, GPIO_PIN_RESET);
@@ -430,6 +504,32 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : COL1_Pin */
+  GPIO_InitStruct.Pin = COL1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(COL1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : ROW3_Pin ROW1_Pin */
+  GPIO_InitStruct.Pin = ROW3_Pin|ROW1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : ROW4_Pin ROW2_Pin */
+  GPIO_InitStruct.Pin = ROW4_Pin|ROW2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : COL3_Pin COL2_Pin */
+  GPIO_InitStruct.Pin = COL3_Pin|COL2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
   /*Configure GPIO pin : USB_PowerSwitchOn_Pin */
   GPIO_InitStruct.Pin = USB_PowerSwitchOn_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -442,6 +542,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
