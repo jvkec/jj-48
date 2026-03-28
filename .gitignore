@@ -39,3 +39,9 @@ Thumbs.db
 *.log
 *.tmp
 *.swp
+
+# =========================
+# Agent files
+# =========================
+AGENT/
+AGENT.md

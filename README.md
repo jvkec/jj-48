@@ -7,6 +7,9 @@ DIN -> PA12
 GND -> GND
 VIN -> 3V3
 
+Potentiometer:
+ADC1 -> PA3
+
 Current pinouts for Keypad:
 ROW1 -> PF15
 ROW2 -> PE13 
