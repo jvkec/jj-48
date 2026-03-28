@@ -168,6 +168,19 @@ int main(void)
   (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
   BpmControl_Init(&htim6, &hadc1);
   Sequencer_Init();
+
+  /* Default beat so we can hear BPM changes immediately:
+     Kick  on 1 & 3  (steps 0,4)
+     Snare on 2 & 4  (steps 2,6)
+     Hi-hat on every eighth note (steps 0-7) */
+  pattern[DRUM_KICK][0]  = 1U;
+  pattern[DRUM_KICK][4]  = 1U;
+  pattern[DRUM_SNARE][2] = 1U;
+  pattern[DRUM_SNARE][6] = 1U;
+  for (uint8_t s = 0U; s < SEQUENCER_NUM_STEPS; s++) {
+    pattern[DRUM_HIHAT][s] = 1U;
+  }
+
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
@@ -176,31 +189,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    scan_keypad();
     BpmControl_Poll();
-    HAL_Delay(1);
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
-		uint8_t last_btn = 1;
-    uint8_t next_drum = 0;
-
-    while (1)
-    {
-    	scan_keypad();
-
-      uint8_t btn = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
-      if (btn && !last_btn) {
-        DrumSynth_Trigger((DrumType_t)next_drum);
-        next_drum = (next_drum + 1U) % DRUM_COUNT;
-      }
-      last_btn = btn;
-    	HAL_Delay(10);
-    }
-	/* USER CODE END WHILE */
-
-	/* USER CODE BEGIN 3 */
-
   /* USER CODE END 3 */
 }
 
