@@ -206,7 +206,6 @@ void oled_init(void) {
 	}
 	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -245,7 +244,6 @@ int main(void)
   MX_ADC1_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
-
   oled_init();
 
   HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_SET);
@@ -262,19 +260,6 @@ int main(void)
   (void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
   BpmControl_Init(&htim6, &hadc1);
   Sequencer_Init();
-
-  /* Default beat so we can hear BPM changes immediately:
-     Kick  on 1 & 3  (steps 0,4)
-     Snare on 2 & 4  (steps 2,6)
-     Hi-hat on every eighth note (steps 0-7) */
-  pattern[DRUM_KICK][0]  = 1U;
-  pattern[DRUM_KICK][4]  = 1U;
-  pattern[DRUM_SNARE][2] = 1U;
-  pattern[DRUM_SNARE][6] = 1U;
-  for (uint8_t s = 0U; s < SEQUENCER_NUM_STEPS; s++) {
-    pattern[DRUM_HIHAT][s] = 1U;
-  }
-
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
