@@ -97,11 +97,12 @@ char keypad[4][3] = {
 // UI grid variables
 uint8_t cursor_row = 0, cursor_col = 0;
 uint8_t swap_cell = NOTE_ON;
-uint8_t grid[GRID_ROWS][GRID_COLS] = {
-	{NOTE_SELECT, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
-	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
-	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
-	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF}
+
+SequenceCell sequence[GRID_ROWS][GRID_COLS] = {
+	{{NOTE_OFF, 1}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}},
+	{{NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}},
+	{{NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}},
+	{{NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}, {NOTE_OFF, 0}}
 };
 
 // Keypad Row pins and ports
@@ -112,46 +113,41 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
-void grid_update(uint8_t grid[GRID_ROWS][GRID_COLS], char key_pressed) {
+void sequence_update(SequenceCell sequence[GRID_ROWS][GRID_COLS], char key_pressed) {
 	switch (key_pressed) {
 		case '4': //left
 			if(cursor_col >= 1) { // left edge
-				grid[cursor_row][cursor_col] = swap_cell;
+				sequence[cursor_row][cursor_col].selected = 0;
 				cursor_col--;
-				swap_cell = grid[cursor_row][cursor_col];
-				grid[cursor_row][cursor_col] = NOTE_SELECT;
+				sequence[cursor_row][cursor_col].selected = 1;
 			}
 			break;
 		case '6': //right
 			if(cursor_col < GRID_COLS - 1) { // right edge
-				grid[cursor_row][cursor_col] = swap_cell;
+				sequence[cursor_row][cursor_col].selected = 0;
 				cursor_col++;
-				swap_cell = grid[cursor_row][cursor_col];
-				grid[cursor_row][cursor_col] = NOTE_SELECT;
+				sequence[cursor_row][cursor_col].selected = 1;
 			}
 			break;
 		case '2': //up
 			if(cursor_row >= 1) { // top edge
-				grid[cursor_row][cursor_col] = swap_cell;
+				sequence[cursor_row][cursor_col].selected = 0;
 				cursor_row--;
-				swap_cell = grid[cursor_row][cursor_col];
-				grid[cursor_row][cursor_col] = NOTE_SELECT;
+				sequence[cursor_row][cursor_col].selected = 1;
 			}
 			break;
 		case '8': //down
 			if(cursor_row < GRID_ROWS - 1) { // bottom edge
-				grid[cursor_row][cursor_col] = swap_cell;
+				sequence[cursor_row][cursor_col].selected = 0;
 				cursor_row++;
-				swap_cell = grid[cursor_row][cursor_col];
-				grid[cursor_row][cursor_col] = NOTE_SELECT;
+				sequence[cursor_row][cursor_col].selected = 1;
 			}
 			break;
 		case '5': //click
-			// code
-			if(swap_cell == NOTE_ON) {
-				swap_cell = NOTE_OFF;
-			} else if (swap_cell == NOTE_OFF) {
-				swap_cell = NOTE_ON;
+			if(sequence[cursor_row][cursor_col].note_state == NOTE_ON) {
+				sequence[cursor_row][cursor_col].note_state = NOTE_OFF;
+			} else {
+				sequence[cursor_row][cursor_col].note_state = NOTE_ON;
 			}
 			break;
 		default:
@@ -161,7 +157,7 @@ void grid_update(uint8_t grid[GRID_ROWS][GRID_COLS], char key_pressed) {
 
 void oled_update(void) {
 	SSD1306_Clear();
-	SSD1306_Put_8x4Grid(grid, &Font_7x10);
+	SSD1306_Put_8x4Grid(sequence, &Font_7x10);
 	SSD1306_UpdateScreen();
 	HAL_Delay(10);
 }
@@ -174,7 +170,7 @@ void scan_keypad(void) {
 			key_pressed = keypad[row][current_col];
 
 			// update grid
-			grid_update(grid, key_pressed);
+			sequence_update(sequence, key_pressed);
 			// update ui
 			oled_update();
 
@@ -192,8 +188,8 @@ void debug_print_grid(void) {
 	for(int i = 0; i < GRID_ROWS; i++) {
 		char message[100];
 		sprintf(message, "%d %d %d %d %d %d %d %d\n",
-				grid[i][0], grid[i][1], grid[i][2], grid[i][3],
-				grid[i][4], grid[i][5], grid[i][6], grid[i][7]
+				sequence[i][0].note_state, sequence[i][1].note_state, sequence[i][2].note_state, sequence[i][3].note_state,
+				sequence[i][4].note_state, sequence[i][5].note_state, sequence[i][6].note_state, sequence[i][7].note_state
 		);
 		print_msg(message);
 	}
@@ -267,13 +263,13 @@ int main(void)
      Kick  on 1 & 3  (steps 0,4)
      Snare on 2 & 4  (steps 2,6)
      Hi-hat on every eighth note (steps 0-7) */
-  pattern[DRUM_KICK][0]  = 1U;
+  /*pattern[DRUM_KICK][0]  = 1U;
   pattern[DRUM_KICK][4]  = 1U;
   pattern[DRUM_SNARE][2] = 1U;
   pattern[DRUM_SNARE][6] = 1U;
   for (uint8_t s = 0U; s < SEQUENCER_NUM_STEPS; s++) {
     pattern[DRUM_HIHAT][s] = 1U;
-  }
+  }*/
 
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
@@ -285,6 +281,16 @@ int main(void)
   {
   	scan_keypad();
     BpmControl_Poll();
+
+    //DRUM_KICK  = 0,
+    //DRUM_SNARE = 1,
+    //DRUM_HIHAT = 2,
+    //DRUM_CLAP  = 3,
+    for(int i = 0; i < GRID_ROWS; i++) {
+    	for(int j = 0; j < GRID_COLS; j++) {
+    		pattern[i][j] = sequence[i][j].note_state;
+    	}
+		}
     HAL_Delay(10);
     /* USER CODE END WHILE */
 
@@ -477,7 +483,6 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  /* 84 MHz TIM6 clock / (PSC+1) = 10 kHz; ARR scaled by BpmControl_ApplyBpm() / bpm_control.h */
   htim6.Init.Prescaler = TIM6_PSC_FOR_10KHZ;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim6.Init.Period = TIM6_ARR_FOR_BPM(BPM_DEFAULT);

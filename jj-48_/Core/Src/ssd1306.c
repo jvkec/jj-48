@@ -235,7 +235,7 @@ HAL_StatusTypeDef SSD1306_Puts(char* str, FontDef_t* Font) {
 	return HAL_OK;
 }
 
-HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDef_t* Font) {
+HAL_StatusTypeDef SSD1306_Put_8x4Grid(SequenceCell sequence[GRID_ROWS][GRID_COLS], FontDef_t* Font) {
 
 	// top grid
 	SSD1306_Puts("12345678", Font);
@@ -246,12 +246,12 @@ HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDe
 	char ch = '_';
 	for(uint8_t i = 0; i < GRID_ROWS; i++) {
 		for(uint8_t j = 0; j < GRID_COLS; j++) {
-			if(grid[i][j] == NOTE_ON) {
-				ch = '_';
-			} else if(grid[i][j] == NOTE_OFF) {
-				ch = ' ';
-			} else if(grid[i][j] == NOTE_SELECT) {
+			if(sequence[i][j].selected) {
 				ch = '!'; // self-defined character
+			} else if(sequence[i][j].note_state == NOTE_ON) {
+				ch = '_';
+			} else if(sequence[i][j].note_state == NOTE_OFF) {
+				ch = ' ';
 			} else {
 				ch = '?'; // undefined state
 			}

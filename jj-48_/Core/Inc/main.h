@@ -43,13 +43,17 @@ extern "C" {
 #define EXTRA_Y_OFFSET 10
 
 // grid on/off
-#define NOTE_ON  1
-#define NOTE_OFF 0
+#define NOTE_ON  1U
+#define NOTE_OFF 0U
 #define NOTE_SELECT 2
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+typedef struct {
+    uint8_t note_state; // NOTE_ON / NOTE_OFF
+    uint8_t selected; // 1 = selected, 0 = not
+} SequenceCell;
 
 /* USER CODE END ET */
 
