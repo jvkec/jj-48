@@ -18,3 +18,9 @@ ROW4 -> PE11
 COL1 -> PF12
 COL2 -> PD15 
 COL3 -> PD14 
+
+OLED Display:
+GND -> GND
+VCC -> 3V3
+SCL -> PF1
+SDA -> PF0
