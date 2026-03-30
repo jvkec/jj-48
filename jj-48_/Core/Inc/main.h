@@ -46,6 +46,7 @@ extern "C" {
 #define NOTE_ON  1
 #define NOTE_OFF 0
 #define NOTE_SELECT 2
+#define NOTE_PLAY   3
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
