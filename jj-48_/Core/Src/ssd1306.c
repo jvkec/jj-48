@@ -251,7 +251,9 @@ HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDe
 			} else if(grid[i][j] == NOTE_OFF) {
 				ch = ' ';
 			} else if(grid[i][j] == NOTE_SELECT) {
-				ch = '!'; // self-defined character
+				ch = '!';
+			} else if(grid[i][j] == NOTE_PLAY) {
+				ch = '.';
 			} else {
 				ch = '?'; // undefined state
 			}
