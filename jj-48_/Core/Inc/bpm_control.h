@@ -8,13 +8,12 @@
 #include "stm32f4xx_hal.h"
 #include <stdint.h>
 
-/* See AGENT/INTEGRATION_GUIDE.md */
 #define BPM_MIN              60U
 #define BPM_MAX              200U
 #define BPM_DEFAULT          120U
 /* TIM6: APB1 timer clock = 84 MHz (HCLK/4 * 2). PSC+1 = 8400 -> 10 kHz tick. */
 #define TIM6_PSC_FOR_10KHZ   8399U
-/* step_period_ms = 60000/BPM/2  =>  counts/step = 300000/BPM */
+/* step_period_ms = 60000/BPM/2  ->  counts/step = 300000/BPM */
 #define TIM6_ARR_FOR_BPM(bpm)  ((300000U / (uint32_t)(bpm)) - 1U)
 
 #define ADC_READ_INTERVAL_MS    75U

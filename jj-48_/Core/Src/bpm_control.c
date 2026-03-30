@@ -58,9 +58,7 @@ void BpmControl_ApplyBpm(uint16_t bpm)
     arr = 0xFFFFU;
   }
   __HAL_TIM_SET_AUTORELOAD(s_htim6, (uint16_t)arr);
-  /* Do not reset CNT on every BPM tweak — that re-phases the sequencer and feels
-     like dropped beats when the pot hovers near a hysteresis edge. Only correct
-     the rare case where CNT > new ARR (can stall the next update after speeding up). */
+  // Prevent the timer from overflowing and causing dropped beats when pot. hovers near a hysteresis edge.
   uint32_t cnt = __HAL_TIM_GET_COUNTER(s_htim6);
   if (cnt > arr) {
     __HAL_TIM_SET_COUNTER(s_htim6, 0U);

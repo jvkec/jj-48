@@ -5,13 +5,15 @@
   *
   *  Waveform recipes:
   *    Kick  — sine oscillator with exponential pitch sweep 200→45 Hz,
-  *            long amplitude decay (128 ms τ).  Classic 808-style thump.
+  *            long amplitude decay (128 ms tau).  Classic 808-style thump.
   *    Snare — sine tone at 185 Hz (fast decay 16 ms) mixed with LFSR
   *            noise (slower decay 64 ms).  Tone gives body, noise gives snap.
-  *    Hi-hat— LFSR noise through a 1-pole HPF (fc ≈ 3 kHz), short decay
-  *            (32 ms τ) for a metallic closed-hat character.
+  *    Hi-hat— LFSR noise through a 1-pole HPF (fc approx 3 kHz), short decay
+  *            (32 ms tau) for a metallic closed-hat character.
   *    Clap  — 3 short noise bursts (2 ms on, 3 ms gap) followed by an
-  *            exponentially decaying noise tail (128 ms tau).
+  *            exp. decaying noise tail (128 ms tau).
+  * 
+  *  Inspired by: https://blog.demofox.org/2015/03/14/diy-synth-basic-drum/
   ******************************************************************************
   */
 
@@ -62,7 +64,7 @@ static inline int16_t Noise_Next(void)
   /* x^16 + x^14 + x^13 + x^11 + 1  (taps 0,2,3,5 in Fibonacci form) */
   uint16_t bit = (lfsr ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1U;
   lfsr = (lfsr >> 1) | (bit << 15);
-  return (int16_t)lfsr;   /* reinterpret as signed — uniform over ±32 k */
+  return (int16_t)lfsr;   /* reinterpret as signed — uniform over +/-32 k */
 }
 
 /* ===== Phase-accumulator helpers ========================================= */
@@ -76,8 +78,8 @@ static inline int16_t Noise_Next(void)
 /* ===== Exponential-decay rates (Q16 per-sample multiplier) =============== */
 /*
  * env[n+1] = env[n] * RATE >> 16
- * Time constant tau ≈ 65536 / (65536 − RATE) samples.
- * At 16 kHz: tau_ms ≈ tau_samples / 16.
+ * Time constant tau approx 65536 / (65536 − RATE) samples.
+ * At 16 kHz: tau_ms approx tau_samples / 16.
  */
 #define DECAY_TAU_256   65280U   /* tau = 256 samp =  16 ms */
 #define DECAY_TAU_512   65408U   /* tau = 512 samp =  32 ms */
@@ -190,7 +192,7 @@ static int32_t HiHat_Sample(DrumVoice_t *v)
 
   int32_t raw = (int32_t)Noise_Next();
 
-  /* ---- 1-pole HPF via LPF subtraction (fc ≈ 3 kHz) ---- */
+  /* ---- 1-pole HPF via LPF subtraction (fc approx 3 kHz) ---- */
   int32_t diff = raw - v->hpf_z1;
   v->hpf_z1 += ((int32_t)HIHAT_HPF_ALPHA * diff) >> 15;
   int32_t hpf = raw - v->hpf_z1;
@@ -219,7 +221,7 @@ static int32_t Clap_Sample(DrumVoice_t *v)
       return 0;            /* silence between bursts */
     }
   } else {
-    /* ---- tail phase: exponentially decaying noise ---- */
+    /* ---- tail phase: exp. decaying noise ---- */
     env = v->env;
     v->env = (int32_t)((uint32_t)env * CLAP_TAIL_DECAY >> 16);
     if (env < ENV_FLOOR) { v->active = 0; return 0; }
@@ -250,8 +252,8 @@ void DrumSynth_Trigger(DrumType_t drum)
   switch (drum) {
     case DRUM_KICK:
       /* Always reset phase. Keeping phase_acc while slamming phase_inc back to
-         KICK_FREQ_START (200 Hz) from a sweeps-near-end value (~45 Hz) causes a
-         huge instantaneous dφ/dt step — heard as buzz/static on fast kicks. */
+         KICK_FREQ_START (200 Hz) from a sweeps-near-end value (approx 45 Hz) causes a
+         huge instantaneous dphi/dt step —> heard as buzz/static on fast kicks. */
       v->phase_acc = 0;
       v->phase_inc = KICK_FREQ_START;
       break;
@@ -274,7 +276,7 @@ int16_t DrumSynth_GetNextSample(void)
   mix += HiHat_Sample(&voices[DRUM_HIHAT]);
   mix += Clap_Sample(&voices[DRUM_CLAP]);
 
-  mix >>= 1;   /* 6 dB headroom for multi-voice overlap */
+  mix >>= 1;   /* 6 dB headroom for mult-voice overlap */
 
   if (mix >  32767) mix =  32767;
   if (mix < -32768) mix = -32768;

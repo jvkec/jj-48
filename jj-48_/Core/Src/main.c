@@ -116,7 +116,7 @@ void grid_update(char key) {
 			if (cursor_row < GRID_ROWS - 1) cursor_row++;
 			break;
 		case '5':
-			__disable_irq();
+			__disable_irq();  // Disble interrupts to prevent race condition
 			pattern[cursor_row][cursor_col] ^= 1U;
 			__enable_irq();
 			break;
