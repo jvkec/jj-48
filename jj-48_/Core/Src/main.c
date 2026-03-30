@@ -23,9 +23,11 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include "drum_synth.h"
 #include "bpm_control.h"
 #include "sequencer.h"
+#include "ssd1306.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,6 +47,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+
+I2C_HandleTypeDef hi2c2;
 
 I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi3_tx;
@@ -70,6 +74,7 @@ static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_I2S3_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -89,6 +94,16 @@ char keypad[4][3] = {
     {'*','0','#'}
 };
 
+// UI grid variables
+uint8_t cursor_row = 0, cursor_col = 0;
+uint8_t swap_cell = NOTE_ON;
+uint8_t grid[GRID_ROWS][GRID_COLS] = {
+	{NOTE_SELECT, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF}
+};
+
 // Keypad Row pins and ports
 GPIO_TypeDef* keypad_row_ports[4] = {ROW1_GPIO_Port, ROW2_GPIO_Port, ROW3_GPIO_Port, ROW4_GPIO_Port};
 uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
@@ -97,6 +112,60 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
+void grid_update(uint8_t grid[GRID_ROWS][GRID_COLS], char key_pressed) {
+	switch (key_pressed) {
+		case '4': //left
+			if(cursor_col >= 1) { // left edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_col--;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '6': //right
+			if(cursor_col < GRID_COLS - 1) { // right edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_col++;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '2': //up
+			if(cursor_row >= 1) { // top edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_row--;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '8': //down
+			if(cursor_row < GRID_ROWS - 1) { // bottom edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_row++;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '5': //click
+			// code
+			if(swap_cell == NOTE_ON) {
+				swap_cell = NOTE_OFF;
+			} else if (swap_cell == NOTE_OFF) {
+				swap_cell = NOTE_ON;
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+void oled_update(void) {
+	SSD1306_Clear();
+	SSD1306_Put_8x4Grid(grid, &Font_7x10);
+	SSD1306_UpdateScreen();
+	HAL_Delay(10);
+}
+
 void scan_keypad(void) {
 	for(uint8_t row = 0; row < 4; row++) {
 		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_SET);
@@ -104,8 +173,10 @@ void scan_keypad(void) {
 			// current_col will take a value when interrupt happens
 			key_pressed = keypad[row][current_col];
 
-			// update UI based on key pressed
-			// updateUI(key_pressed)
+			// update grid
+			grid_update(grid, key_pressed);
+			// update ui
+			oled_update();
 
 			char message[100];
 			sprintf(message, "row: %d, current_col: %d, Key: %c\n", row, current_col, key_pressed);
@@ -116,6 +187,26 @@ void scan_keypad(void) {
 		HAL_Delay(10);
 	}
 }
+
+void debug_print_grid(void) {
+	for(int i = 0; i < GRID_ROWS; i++) {
+		char message[100];
+		sprintf(message, "%d %d %d %d %d %d %d %d\n",
+				grid[i][0], grid[i][1], grid[i][2], grid[i][3],
+				grid[i][4], grid[i][5], grid[i][6], grid[i][7]
+		);
+		print_msg(message);
+	}
+}
+
+void oled_init(void) {
+	if (SSD1306_Init() != HAL_OK) {
+		HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+		while(1);
+	}
+	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -152,7 +243,10 @@ int main(void)
   MX_TIM6_Init();
   MX_I2S3_Init();
   MX_ADC1_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
+
+  oled_init();
 
   HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(ROW2_GPIO_Port, ROW2_Pin, GPIO_PIN_SET);
@@ -189,7 +283,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    scan_keypad();
+  	scan_keypad();
     BpmControl_Poll();
     HAL_Delay(10);
     /* USER CODE END WHILE */
@@ -286,7 +380,6 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = 1;
-  /* Match lab reference (adc_reference): ADC_SAMPLETIME_3CYCLES. Use 56+ if noisy on breadboard. */
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -295,6 +388,40 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 400000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
@@ -350,7 +477,7 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  /* 84 MHz timer clock / 8400 = 10 kHz; ARR matches BPM via BpmControl_ApplyBpm() */
+  /* 84 MHz TIM6 clock / (PSC+1) = 10 kHz; ARR scaled by BpmControl_ApplyBpm() / bpm_control.h */
   htim6.Init.Prescaler = TIM6_PSC_FOR_10KHZ;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim6.Init.Period = TIM6_ARR_FOR_BPM(BPM_DEFAULT);
@@ -466,10 +593,10 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
