@@ -116,7 +116,9 @@ void grid_update(char key) {
 			if (cursor_row < GRID_ROWS - 1) cursor_row++;
 			break;
 		case '5':
+			__disable_irq();
 			pattern[cursor_row][cursor_col] ^= 1U;
+			__enable_irq();
 			break;
 		default:
 			break;
@@ -603,8 +605,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USB_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  /* Below I2S DMA (0) so column IRQs do not defer audio. */
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }

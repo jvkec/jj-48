@@ -11,7 +11,7 @@
   *    Hi-hat— LFSR noise through a 1-pole HPF (fc ≈ 3 kHz), short decay
   *            (32 ms τ) for a metallic closed-hat character.
   *    Clap  — 3 short noise bursts (2 ms on, 3 ms gap) followed by an
-  *            exponentially decaying noise tail (128 ms τ).
+  *            exponentially decaying noise tail (128 ms tau).
   ******************************************************************************
   */
 
@@ -76,21 +76,22 @@ static inline int16_t Noise_Next(void)
 /* ===== Exponential-decay rates (Q16 per-sample multiplier) =============== */
 /*
  * env[n+1] = env[n] * RATE >> 16
- * Time constant τ ≈ 65536 / (65536 − RATE) samples.
- * At 16 kHz: τ_ms ≈ τ_samples / 16.
+ * Time constant tau ≈ 65536 / (65536 − RATE) samples.
+ * At 16 kHz: tau_ms ≈ tau_samples / 16.
  */
-#define DECAY_TAU_256   65280U   /* τ = 256 samp =  16 ms */
-#define DECAY_TAU_512   65408U   /* τ = 512 samp =  32 ms */
-#define DECAY_TAU_1024  65472U   /* τ = 1024 samp = 64 ms */
-#define DECAY_TAU_2048  65504U   /* τ = 2048 samp = 128 ms */
+#define DECAY_TAU_256   65280U   /* tau = 256 samp =  16 ms */
+#define DECAY_TAU_512   65408U   /* tau = 512 samp =  32 ms */
+#define DECAY_TAU_1024  65472U   /* tau = 1024 samp = 64 ms */
+#define DECAY_TAU_2048  65504U   /* tau = 2048 samp = 128 ms */
 
 /* ===== Per-instrument tuning ============================================= */
 
 /* Kick — sine + pitch sweep */
 #define KICK_FREQ_START     FREQ_TO_INC(200)
 #define KICK_FREQ_END       FREQ_TO_INC(45)
-#define KICK_PITCH_SHIFT    9U          /* pitch sweep τ = 512 samp (32 ms) */
+#define KICK_PITCH_SHIFT    9U          /* pitch sweep tau = 512 samp (32 ms) */
 #define KICK_AMP_DECAY      DECAY_TAU_2048
+#define KICK_ATTACK_LEN     48U         /* ~3 ms; quadratic easing softens onset */
 
 /* Snare — sine body + noise snap */
 #define SNARE_TONE_FREQ     FREQ_TO_INC(185)
@@ -132,6 +133,11 @@ static int32_t Kick_Sample(DrumVoice_t *v)
 {
   if (!v->active) return 0;
 
+  uint32_t kn = v->n;
+  if (kn < KICK_ATTACK_LEN) {
+    v->n = kn + 1U;
+  }
+
   /* ---- pitch sweep: exponential decay toward KICK_FREQ_END ---- */
   if (v->phase_inc > KICK_FREQ_END) {
     uint32_t delta = v->phase_inc - KICK_FREQ_END;
@@ -146,6 +152,12 @@ static int32_t Kick_Sample(DrumVoice_t *v)
 
   /* ---- amplitude envelope ---- */
   sample = (sample * v->env) >> 15;
+  /* Ease-in after each trigger: quadratic is gentler than linear at the very start. */
+  if (kn < KICK_ATTACK_LEN) {
+    int32_t a = (int32_t)(kn + 1U);
+    int32_t d = (int32_t)KICK_ATTACK_LEN * (int32_t)KICK_ATTACK_LEN;
+    sample = (sample * a * a) / d;
+  }
   v->env = (int32_t)((uint32_t)v->env * KICK_AMP_DECAY >> 16);
 
   if (v->env < ENV_FLOOR) { v->active = 0; return 0; }
@@ -229,17 +241,28 @@ void DrumSynth_Trigger(DrumType_t drum)
   if (drum >= DRUM_COUNT) return;
   DrumVoice_t *v = &voices[drum];
 
-  v->active    = 1;
-  v->n         = 0;
-  v->env       = 32767;
-  v->env2      = 32767;
-  v->phase_acc = 0;
-  v->hpf_z1    = 0;
+  v->active = 1;
+  v->n      = 0;
+  v->env    = 32767;
+  v->env2   = 32767;
+  v->hpf_z1 = 0;
 
   switch (drum) {
-    case DRUM_KICK:   v->phase_inc = KICK_FREQ_START;  break;
-    case DRUM_SNARE:  v->phase_inc = SNARE_TONE_FREQ;  break;
-    default:          v->phase_inc = 0;                 break;
+    case DRUM_KICK:
+      /* Always reset phase. Keeping phase_acc while slamming phase_inc back to
+         KICK_FREQ_START (200 Hz) from a sweeps-near-end value (~45 Hz) causes a
+         huge instantaneous dφ/dt step — heard as buzz/static on fast kicks. */
+      v->phase_acc = 0;
+      v->phase_inc = KICK_FREQ_START;
+      break;
+    case DRUM_SNARE:
+      v->phase_acc = 0;
+      v->phase_inc = SNARE_TONE_FREQ;
+      break;
+    default:
+      v->phase_acc = 0;
+      v->phase_inc = 0;
+      break;
   }
 }
 
