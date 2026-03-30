@@ -193,8 +193,9 @@ void SSD1306_Stopscroll(void)
 
 void SSD1306_Putc(uint16_t x, uint16_t y, char ch, FontDef_t* Font) {
 	uint16_t *data_ptr = Font->data;
-	uint8_t rows = 18;
-	uint8_t cols = 11;
+	uint8_t rows = Font->FontHeight;
+	uint8_t cols = Font->FontWidth;
+
 	uint16_t data_start_index = (ch - 32) * rows;
 
 	for(int i = data_start_index; i < data_start_index + rows; i++) {
@@ -215,20 +216,51 @@ void SSD1306_Putc(uint16_t x, uint16_t y, char ch, FontDef_t* Font) {
 HAL_StatusTypeDef SSD1306_Puts(char* str, FontDef_t* Font) {
 
 	/* Loop over every character until we see \0. */
-	uint16_t x_offset = 0;
-	uint16_t y_offset = 0;
+	uint16_t x_offset = DEFAULT_X_OFFSET;
+	uint16_t y_offset = DEFAULT_Y_OFFSET;
 	while (*str != '\0') {
 
         /* TODO */
 		if(*str == '\n') {
-			y_offset += 18;
-			x_offset = 0;
+			y_offset += Font->FontWidth;
+			x_offset = DEFAULT_X_OFFSET;
 			str++;
 		}
 		SSD1306_Putc(0+x_offset, 0 + y_offset, *str, Font);
-		x_offset += 11;
+		x_offset += Font->FontHeight + EXTRA_X_OFFSET;
         /* Increase string pointer */
         str++;
+	}
+
+	return HAL_OK;
+}
+
+HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDef_t* Font) {
+
+	// top grid
+	SSD1306_Puts("12345678", Font);
+
+	uint16_t x_offset = DEFAULT_X_OFFSET;
+	uint16_t y_offset = DEFAULT_Y_OFFSET;
+
+	char ch = '_';
+	for(uint8_t i = 0; i < GRID_ROWS; i++) {
+		for(uint8_t j = 0; j < GRID_COLS; j++) {
+			if(grid[i][j] == NOTE_ON) {
+				ch = '_';
+			} else if(grid[i][j] == NOTE_OFF) {
+				ch = ' ';
+			} else if(grid[i][j] == NOTE_SELECT) {
+				ch = '!'; // self-defined character
+			} else {
+				ch = '?'; // undefined state
+			}
+
+			SSD1306_Putc(0+x_offset, 0 + y_offset, ch, Font);
+			x_offset += Font->FontHeight + EXTRA_X_OFFSET;
+		}
+		y_offset += Font->FontWidth + EXTRA_Y_OFFSET;
+		x_offset = DEFAULT_X_OFFSET;
 	}
 
 	return HAL_OK;

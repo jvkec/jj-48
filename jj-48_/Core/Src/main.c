@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include "drum_synth.h"
 #include "bpm_control.h"
 #include "sequencer.h"
@@ -93,6 +94,16 @@ char keypad[4][3] = {
     {'*','0','#'}
 };
 
+// UI grid variables
+uint8_t cursor_row = 0, cursor_col = 0;
+uint8_t swap_cell = NOTE_ON;
+uint8_t grid[GRID_ROWS][GRID_COLS] = {
+	{NOTE_SELECT, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF},
+	{NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF, NOTE_OFF}
+};
+
 // Keypad Row pins and ports
 GPIO_TypeDef* keypad_row_ports[4] = {ROW1_GPIO_Port, ROW2_GPIO_Port, ROW3_GPIO_Port, ROW4_GPIO_Port};
 uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
@@ -101,6 +112,60 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
+void grid_update(uint8_t grid[GRID_ROWS][GRID_COLS], char key_pressed) {
+	switch (key_pressed) {
+		case '4': //left
+			if(cursor_col >= 1) { // left edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_col--;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '6': //right
+			if(cursor_col < GRID_COLS - 1) { // right edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_col++;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '2': //up
+			if(cursor_row >= 1) { // top edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_row--;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '8': //down
+			if(cursor_row < GRID_ROWS - 1) { // bottom edge
+				grid[cursor_row][cursor_col] = swap_cell;
+				cursor_row++;
+				swap_cell = grid[cursor_row][cursor_col];
+				grid[cursor_row][cursor_col] = NOTE_SELECT;
+			}
+			break;
+		case '5': //click
+			// code
+			if(swap_cell == NOTE_ON) {
+				swap_cell = NOTE_OFF;
+			} else if (swap_cell == NOTE_OFF) {
+				swap_cell = NOTE_ON;
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+void oled_update(void) {
+	SSD1306_Clear();
+	SSD1306_Put_8x4Grid(grid, &Font_7x10);
+	SSD1306_UpdateScreen();
+	HAL_Delay(10);
+}
+
 void scan_keypad(void) {
 	for(uint8_t row = 0; row < 4; row++) {
 		HAL_GPIO_WritePin(keypad_row_ports[row], keypad_row_pins[row], GPIO_PIN_SET);
@@ -108,8 +173,10 @@ void scan_keypad(void) {
 			// current_col will take a value when interrupt happens
 			key_pressed = keypad[row][current_col];
 
-			// update UI based on key pressed
-			// updateUI(key_pressed)
+			// update grid
+			grid_update(grid, key_pressed);
+			// update ui
+			oled_update();
 
 			char message[100];
 			sprintf(message, "row: %d, current_col: %d, Key: %c\n", row, current_col, key_pressed);
@@ -121,29 +188,24 @@ void scan_keypad(void) {
 	}
 }
 
-void i2c_code(void) {
-	uint8_t data[2] =  {0xAF};
-	uint8_t reg = 0x00;
+void debug_print_grid(void) {
+	for(int i = 0; i < GRID_ROWS; i++) {
+		char message[100];
+		sprintf(message, "%d %d %d %d %d %d %d %d\n",
+				grid[i][0], grid[i][1], grid[i][2], grid[i][3],
+				grid[i][4], grid[i][5], grid[i][6], grid[i][7]
+		);
+		print_msg(message);
+	}
+}
+
+void oled_init(void) {
 	if (SSD1306_Init() != HAL_OK) {
 		HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
 		while(1);
 	}
 	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
-
-	//SSD1306_Putc(0,0,'a',&Font_11x18);
-	SSD1306_Puts("3 lines\nof text\nscrolling", &Font_11x18);
-	SSD1306_UpdateScreen();
-	SSD1306_Scroll(SSD1306_SCROLL_RIGHT, 0, 7);
-	HAL_Delay(3000);
-	SSD1306_Stopscroll();
-	HAL_Delay(1000);
-	SSD1306_Scroll(SSD1306_SCROLL_LEFT, 0, 7);
-	HAL_Delay(3000);
-	SSD1306_Stopscroll();
-
-	SSD1306_Clear();
 }
-
 
 /* USER CODE END 0 */
 
@@ -184,7 +246,7 @@ int main(void)
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
 
-  i2c_code();
+  oled_init();
 
   HAL_GPIO_WritePin(ROW1_GPIO_Port, ROW1_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(ROW2_GPIO_Port, ROW2_Pin, GPIO_PIN_SET);
@@ -221,7 +283,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    scan_keypad();
+  	scan_keypad();
     BpmControl_Poll();
     HAL_Delay(10);
     /* USER CODE END WHILE */

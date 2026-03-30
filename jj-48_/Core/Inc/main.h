@@ -33,6 +33,19 @@ extern "C" {
 /* USER CODE BEGIN Includes */
 #define LD2_Pin GPIO_PIN_7
 #define LD2_GPIO_Port GPIOB
+
+#define GRID_ROWS 4
+#define GRID_COLS 8
+
+#define DEFAULT_X_OFFSET 20
+#define DEFAULT_Y_OFFSET 0
+#define EXTRA_X_OFFSET 3
+#define EXTRA_Y_OFFSET 10
+
+// grid on/off
+#define NOTE_ON  1
+#define NOTE_OFF 0
+#define NOTE_SELECT 2
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

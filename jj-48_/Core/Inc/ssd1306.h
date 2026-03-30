@@ -12,6 +12,8 @@
 #include "fonts.h"
 #include "stdlib.h"
 #include "string.h"
+#include "stdbool.h"
+#include "main.h"
 
 /* Basic parameters for the SSD1306 screen. */
 #define SSD1306_I2C_ADDR         0x78  /* I2C address */
@@ -54,6 +56,7 @@ void SSD1306_Stopscroll(void);
 /* PART IV: Operations for writing text */
 void SSD1306_Putc(uint16_t x, uint16_t y, char ch, FontDef_t* Font);
 HAL_StatusTypeDef SSD1306_Puts(char* str, FontDef_t* Font);
+HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDef_t* Font);
 
 
 #endif /* INC_SSD1306_H_ */
