@@ -86,6 +86,7 @@ void print_msg(char * msg) {
 }
 
 int8_t current_col = -1;
+int8_t user_button_pressed = -1;
 char key_pressed = '\0';
 char keypad[4][3] = {
     {'1','2','3'},
@@ -167,6 +168,71 @@ void oled_init(void) {
 	}
 	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
 }
+
+HAL_StatusTypeDef flash_write_bytes(uint32_t flash_addr, uint32_t *data, uint32_t word_count) {
+	HAL_StatusTypeDef ret = HAL_OK;
+
+	HAL_FLASH_Unlock();
+	for(uint32_t i = 0; i < word_count; i++) {
+		ret = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, flash_addr + (i * 4), data[i]); // write every word
+
+    if (ret != HAL_OK) break;
+	}
+	HAL_FLASH_Lock();
+
+	return ret;
+}
+
+HAL_StatusTypeDef flash_erase_sector_7(void) {
+  HAL_StatusTypeDef ret = HAL_OK;
+  FLASH_EraseInitTypeDef erase_init;
+  uint32_t sector_error;
+
+  HAL_FLASH_Unlock();
+  erase_init.TypeErase     = FLASH_TYPEERASE_SECTORS;
+  erase_init.VoltageRange  = FLASH_VOLTAGE_RANGE_3;
+  erase_init.Sector        = FLASH_SECTOR_7;
+  erase_init.NbSectors     = 1;
+
+  ret = HAL_FLASHEx_Erase(&erase_init, &sector_error);
+  HAL_FLASH_Lock();
+
+  return ret;
+}
+
+// writes sequence data to sector 7 (flash ADDR: 0x08060000)
+// this sector safe as is far beyond where program code is stored
+HAL_StatusTypeDef write_data_to_flash(void) {
+	HAL_StatusTypeDef ret = HAL_OK;
+	SaveFlashData data = {0};
+	for (int i = 0; i < DRUM_COUNT; i++) {
+		for (int j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+			data.pattern[i][j] = pattern[i][j];
+		}
+	}
+	data.valid = 0xDEADBEEF; // valid pattern
+
+	ret = flash_erase_sector_7();
+	if (ret != HAL_OK) return ret;
+
+	ret = flash_write_bytes(
+		FLASH_USER_START_ADDR,
+		(uint32_t*)&data,
+		sizeof(SaveFlashData) / 4 // get number of words, should be (36 bytes / 4) = 9
+	);
+
+	return ret;
+}
+
+HAL_StatusTypeDef flash_read_data(SaveFlashData *data) {
+    if (!data) return HAL_ERROR;
+    memcpy(data, (void*)FLASH_USER_START_ADDR, sizeof(SaveFlashData));
+
+    // make sure data that was stored in flash is valid
+    if (data->valid != 0xDEADBEEF) return HAL_ERROR;
+    return HAL_OK;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -217,6 +283,32 @@ int main(void)
   Sequencer_Init();
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
+
+
+  // Load saved sequence from flash
+  SaveFlashData saved_sequence;
+  if (flash_read_data(&saved_sequence) == HAL_OK) {
+		// copy saved data into pattern
+		for (uint32_t i = 0; i < DRUM_COUNT; i++) {
+			for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+				pattern[i][j] = saved_sequence.pattern[i][j];
+			}
+		}
+		char message[100];
+		sprintf(message, "Loaded pattern from flash.\r\n");
+		print_msg(message);
+  } else {
+  	// initialize empty pattern
+  	for (uint32_t i = 0; i < DRUM_COUNT; i++) {
+			for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+				pattern[i][j] = NOTE_OFF;
+			}
+		}
+  	char message[100];
+  	sprintf(message, "Initialized empty pattern.\r\n");
+  	print_msg(message);
+  }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -226,6 +318,17 @@ int main(void)
   	scan_keypad();
     BpmControl_Poll();
     oled_update();
+
+    if(user_button_pressed == 1) {
+    	user_button_pressed = -1;
+    	char message[100];
+    	if(write_data_to_flash() != HAL_OK) {
+				sprintf(message, "write_data_to_flash failed\n");
+    	} else {
+				sprintf(message, "write_data_to_flash OK\n");
+    	}
+    	print_msg(message);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

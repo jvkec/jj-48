@@ -60,6 +60,7 @@ extern TIM_HandleTypeDef htim6;
 /* USER CODE BEGIN EV */
 extern void print_msg(char * msg);
 extern int8_t current_col;
+extern int8_t user_button_pressed;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -256,8 +257,9 @@ void EXTI15_10_IRQHandler(void)
 	}
 
   if (__HAL_GPIO_EXTI_GET_FLAG(USER_Btn_Pin)) {
+  	user_button_pressed = 1;
 		print_msg("User Button Pressed\r\n");
-		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+		//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	}
 
   /* USER CODE END EXTI15_10_IRQn 0 */
