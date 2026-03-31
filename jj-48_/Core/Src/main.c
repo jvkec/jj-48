@@ -102,6 +102,17 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
+void reset_pattern(void) {
+	for (uint32_t i = 0; i < DRUM_COUNT; i++) {
+		for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+			pattern[i][j] = NOTE_OFF;
+		}
+	}
+	char message[100];
+	sprintf(message, "Initialized empty pattern.\r\n");
+	print_msg(message);
+}
+
 void grid_update(char key) {
 	switch (key) {
 		case '4':
@@ -115,6 +126,11 @@ void grid_update(char key) {
 			break;
 		case '8':
 			if (cursor_row < GRID_ROWS - 1) cursor_row++;
+			break;
+		case '*': // reset pattern to default
+			__disable_irq();  // Disble interrupts to prevent race condition
+			reset_pattern();
+			__enable_irq();
 			break;
 		case '5':
 			__disable_irq();  // Disble interrupts to prevent race condition
@@ -299,14 +315,7 @@ int main(void)
 		print_msg(message);
   } else {
   	// initialize empty pattern
-  	for (uint32_t i = 0; i < DRUM_COUNT; i++) {
-			for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
-				pattern[i][j] = NOTE_OFF;
-			}
-		}
-  	char message[100];
-  	sprintf(message, "Initialized empty pattern.\r\n");
-  	print_msg(message);
+  	reset_pattern();
   }
 
   /* USER CODE END 2 */
