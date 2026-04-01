@@ -69,7 +69,6 @@ void ssd1306_I2C_Write(uint8_t address, uint8_t reg, uint8_t* data, uint16_t cou
     memcpy(&buf[1], data, count);
 
 	if (HAL_I2C_Master_Transmit(&hi2c2, address, buf, count + 1, 10) != HAL_OK) {
-		//print_msg(message);
 		HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
 		while(1);
 	}

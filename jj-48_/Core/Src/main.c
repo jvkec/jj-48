@@ -21,7 +21,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include "drum_synth.h"
@@ -81,11 +80,8 @@ static void MX_I2C2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void print_msg(char * msg) {
-	HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
-}
-
 int8_t current_col = -1;
+int8_t user_button_pressed = -1;
 char key_pressed = '\0';
 char keypad[4][3] = {
     {'1','2','3'},
@@ -101,6 +97,14 @@ uint16_t keypad_row_pins[4] = {ROW1_Pin, ROW2_Pin, ROW3_Pin, ROW4_Pin};
 GPIO_TypeDef* keypad_col_ports[3] = {COL1_GPIO_Port, COL2_GPIO_Port, COL3_GPIO_Port};
 uint16_t keypad_col_pins[3] = {COL1_Pin, COL2_Pin, COL3_Pin};
 
+void reset_pattern(void) {
+	for (uint32_t i = 0; i < DRUM_COUNT; i++) {
+		for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+			pattern[i][j] = NOTE_OFF;
+		}
+	}
+}
+
 void grid_update(char key) {
 	switch (key) {
 		case '4':
@@ -114,6 +118,11 @@ void grid_update(char key) {
 			break;
 		case '8':
 			if (cursor_row < GRID_ROWS - 1) cursor_row++;
+			break;
+		case '*': // reset pattern to default
+			__disable_irq();  // Disble interrupts to prevent race condition
+			reset_pattern();
+			__enable_irq();
 			break;
 		case '5':
 			__disable_irq();  // Disble interrupts to prevent race condition
@@ -167,6 +176,84 @@ void oled_init(void) {
 	}
 	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
 }
+
+HAL_StatusTypeDef flash_write_bytes(uint32_t flash_addr, uint32_t *data, uint32_t word_count) {
+	HAL_StatusTypeDef ret = HAL_OK;
+
+	HAL_FLASH_Unlock();
+	for(uint32_t i = 0; i < word_count; i++) {
+		ret = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, flash_addr + (i * 4), data[i]); // write every word
+
+    if (ret != HAL_OK) break;
+	}
+	HAL_FLASH_Lock();
+
+	return ret;
+}
+
+HAL_StatusTypeDef flash_erase_sector_7(void) {
+  HAL_StatusTypeDef ret = HAL_OK;
+  FLASH_EraseInitTypeDef erase_init;
+  uint32_t sector_error;
+
+  HAL_FLASH_Unlock();
+  erase_init.TypeErase     = FLASH_TYPEERASE_SECTORS;
+  erase_init.VoltageRange  = FLASH_VOLTAGE_RANGE_3;
+  erase_init.Sector        = FLASH_SECTOR_7;
+  erase_init.NbSectors     = 1;
+
+  ret = HAL_FLASHEx_Erase(&erase_init, &sector_error);
+  HAL_FLASH_Lock();
+
+  return ret;
+}
+
+static void i2s_dma_restart_prefill(void)
+{
+	for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
+		uint16_t s = (uint16_t)DrumSynth_GetNextSample();
+		i2s_audio_buf[i * 2U] = s;
+		i2s_audio_buf[i * 2U + 1U] = s;
+	}
+	(void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
+}
+
+// writes sequence data to sector 7 (flash ADDR: 0x08060000)
+// this sector safe as is far beyond where program code is stored
+HAL_StatusTypeDef write_data_to_flash(void) {
+	HAL_StatusTypeDef ret = HAL_OK;
+	SaveFlashData data = {0};
+	for (int i = 0; i < DRUM_COUNT; i++) {
+		for (int j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+			data.pattern[i][j] = pattern[i][j];
+		}
+	}
+	data.valid = 0xDEADBEEF; // valid pattern
+
+	(void)HAL_I2S_DMAStop(&hi2s3);
+
+	ret = flash_erase_sector_7();
+	if (ret == HAL_OK) {
+		ret = flash_write_bytes(
+			FLASH_USER_START_ADDR,
+			(uint32_t *)&data,
+			sizeof(SaveFlashData) / 4U
+		);
+	}
+
+	i2s_dma_restart_prefill();
+	return ret;
+}
+
+HAL_StatusTypeDef flash_read_data(SaveFlashData *data) {
+    if (!data) return HAL_ERROR;
+    memcpy(data, (void*)FLASH_USER_START_ADDR, sizeof(SaveFlashData));
+
+    // make sure data that was stored in flash is valid
+    if (data->valid != 0xDEADBEEF) return HAL_ERROR;
+    return HAL_OK;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -217,6 +304,21 @@ int main(void)
   Sequencer_Init();
   BpmControl_ApplyBpm(BPM_DEFAULT);
   (void)HAL_TIM_Base_Start_IT(&htim6);
+
+
+  // Load saved sequence from flash
+  SaveFlashData saved_sequence;
+  if (flash_read_data(&saved_sequence) == HAL_OK) {
+		for (uint32_t i = 0; i < DRUM_COUNT; i++) {
+			for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
+				pattern[i][j] = saved_sequence.pattern[i][j];
+			}
+		}
+  } else {
+  	// initialize empty pattern
+  	reset_pattern();
+  }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -226,6 +328,11 @@ int main(void)
   	scan_keypad();
     BpmControl_Poll();
     oled_update();
+
+    if (user_button_pressed == 1) {
+    	user_button_pressed = -1;
+    	(void)write_data_to_flash();
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

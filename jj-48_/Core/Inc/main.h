@@ -31,6 +31,8 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "sequencer.h"
+#include "drum_synth.h"
 #define LD2_Pin GPIO_PIN_7
 #define LD2_GPIO_Port GPIOB
 
@@ -47,6 +49,16 @@ extern "C" {
 #define NOTE_OFF 0
 #define NOTE_SELECT 2
 #define NOTE_PLAY   3
+
+// flash
+#define FLASH_USER_START_ADDR  0x08060000 // sector 7
+#define FLASH_USER_END_ADDR    0x0807FFFF
+
+typedef struct {
+	uint8_t pattern[DRUM_COUNT][SEQUENCER_NUM_STEPS]; // 4 uint8_t x 8 uint8_t = 32 bytes
+	uint32_t valid; // uin32_t = 4 bytes
+} SaveFlashData; // 36 bytes
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
