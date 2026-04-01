@@ -260,6 +260,7 @@ HAL_StatusTypeDef SSD1306_Put_8x4Grid(uint8_t grid[GRID_ROWS][GRID_COLS], FontDe
 			SSD1306_Putc(0+x_offset, 0 + y_offset, ch, Font);
 			x_offset += Font->FontHeight + EXTRA_X_OFFSET;
 		}
+		SSD1306_Putc(0, 0 + y_offset, 'A'+i, &Font_11x18); // drum icons
 		y_offset += Font->FontWidth + EXTRA_Y_OFFSET;
 		x_offset = DEFAULT_X_OFFSET;
 	}
