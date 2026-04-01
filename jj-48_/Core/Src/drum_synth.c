@@ -20,7 +20,7 @@
 #include "drum_synth.h"
 #include <string.h>
 
-/* ===== Sine LUT (256 entries, Fixed Point Q15, +/-32767) ============== */
+/* Sine LUT (256 entries, Fixed Point Q15, +/-32767) */
 static const int16_t sine_tab[256] = {
         0,    804,   1608,   2410,   3212,   4011,   4808,   5602,
      6393,   7179,   7962,   8739,   9512,  10278,  11039,  11793,
@@ -56,7 +56,7 @@ static const int16_t sine_tab[256] = {
     -6393,  -5602,  -4808,  -4011,  -3212,  -2410,  -1608,   -804,
 };
 
-/* ===== 16-bit maximal-length LFSR (period 2^16-1) ======================== */
+/* 16-bit maximal-length LFSR (period 2^16-1) */
 static uint16_t lfsr = 0xACE1U;
 
 static inline int16_t Noise_Next(void)
@@ -67,7 +67,7 @@ static inline int16_t Noise_Next(void)
   return (int16_t)lfsr;   /* reinterpret as signed — uniform over +/-32 k */
 }
 
-/* ===== Phase-accumulator helpers ========================================= */
+/* Phase-accumulator helpers */
 /*
  * Phase accumulator is Q16.16.  Top 8 bits index into the 256-entry table.
  *   phase_inc = freq_hz * 256 * 65536 / 16000
@@ -75,7 +75,7 @@ static inline int16_t Noise_Next(void)
  */
 #define FREQ_TO_INC(hz)  ((uint32_t)((uint32_t)(hz) * 131072U / 125U))
 
-/* ===== Exponential-decay rates (Q16 per-sample multiplier) =============== */
+/* Exponential-decay rates (Q16 per-sample multiplier) */
 /*
  * env[n+1] = env[n] * RATE >> 16
  * Time constant tau approx 65536 / (65536 − RATE) samples.
@@ -86,7 +86,7 @@ static inline int16_t Noise_Next(void)
 #define DECAY_TAU_1024  65472U   /* tau = 1024 samp = 64 ms */
 #define DECAY_TAU_2048  65504U   /* tau = 2048 samp = 128 ms */
 
-/* ===== Per-instrument tuning ============================================= */
+/* Per-instrument tuning */
 
 /* Kick — sine + pitch sweep */
 #define KICK_FREQ_START     FREQ_TO_INC(200)
@@ -116,7 +116,7 @@ static inline int16_t Noise_Next(void)
 /* Envelope floor — below this the voice is silenced (~−54 dB) */
 #define ENV_FLOOR  64
 
-/* ===== Per-voice runtime state =========================================== */
+/* Per-voice runtime state */
 typedef struct {
   uint8_t  active;
   uint32_t n;           /* sample counter since trigger                      */
@@ -129,7 +129,7 @@ typedef struct {
 
 static DrumVoice_t voices[DRUM_COUNT];
 
-/* ===== Individual voice sample generators ================================ */
+/* Individual voice sample generators */
 
 static int32_t Kick_Sample(DrumVoice_t *v)
 {
@@ -230,7 +230,7 @@ static int32_t Clap_Sample(DrumVoice_t *v)
   return ((int32_t)Noise_Next() * env) >> 15;
 }
 
-/* ===== Public API ======================================================== */
+/* Public API */
 
 void DrumSynth_Init(void)
 {
