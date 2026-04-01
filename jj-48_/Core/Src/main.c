@@ -27,6 +27,7 @@
 #include "bpm_control.h"
 #include "sequencer.h"
 #include "ssd1306.h"
+#include "flash_storage.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -177,37 +178,6 @@ void oled_init(void) {
 	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
 }
 
-HAL_StatusTypeDef flash_write_bytes(uint32_t flash_addr, uint32_t *data, uint32_t word_count) {
-	HAL_StatusTypeDef ret = HAL_OK;
-
-	HAL_FLASH_Unlock();
-	for(uint32_t i = 0; i < word_count; i++) {
-		ret = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, flash_addr + (i * 4), data[i]); // write every word
-
-    if (ret != HAL_OK) break;
-	}
-	HAL_FLASH_Lock();
-
-	return ret;
-}
-
-HAL_StatusTypeDef flash_erase_sector_7(void) {
-  HAL_StatusTypeDef ret = HAL_OK;
-  FLASH_EraseInitTypeDef erase_init;
-  uint32_t sector_error;
-
-  HAL_FLASH_Unlock();
-  erase_init.TypeErase     = FLASH_TYPEERASE_SECTORS;
-  erase_init.VoltageRange  = FLASH_VOLTAGE_RANGE_3;
-  erase_init.Sector        = FLASH_SECTOR_7;
-  erase_init.NbSectors     = 1;
-
-  ret = HAL_FLASHEx_Erase(&erase_init, &sector_error);
-  HAL_FLASH_Lock();
-
-  return ret;
-}
-
 static void i2s_dma_restart_prefill(void)
 {
 	for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
@@ -243,15 +213,6 @@ HAL_StatusTypeDef write_data_to_flash(void) {
 
 	i2s_dma_restart_prefill();
 	return ret;
-}
-
-HAL_StatusTypeDef flash_read_data(SaveFlashData *data) {
-    if (!data) return HAL_ERROR;
-    memcpy(data, (void*)FLASH_USER_START_ADDR, sizeof(SaveFlashData));
-
-    // make sure data that was stored in flash is valid
-    if (data->valid != 0xDEADBEEF) return HAL_ERROR;
-    return HAL_OK;
 }
 
 /* USER CODE END 0 */
