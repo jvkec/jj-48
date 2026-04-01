@@ -57,12 +57,14 @@ void BpmControl_ApplyBpm(uint16_t bpm)
   if (arr > 0xFFFFU) {
     arr = 0xFFFFU;
   }
+  HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
   __HAL_TIM_SET_AUTORELOAD(s_htim6, (uint16_t)arr);
-  // Prevent the timer from overflowing and causing dropped beats when pot. hovers near a hysteresis edge.
   uint32_t cnt = __HAL_TIM_GET_COUNTER(s_htim6);
   if (cnt > arr) {
     __HAL_TIM_SET_COUNTER(s_htim6, 0U);
   }
+  __HAL_TIM_CLEAR_FLAG(s_htim6, TIM_FLAG_UPDATE);
+  HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
   s_last_applied_bpm = bpm;
 }
 

@@ -1,26 +1,46 @@
 /**
   ******************************************************************************
   * @file    drum_synth.c
-  * @brief   4-voice drum synthesizer — kick, snare, hi-hat, clap.
+  * @brief   4 voices kick snare hat clap nothing fancy
   *
-  *  Waveform recipes:
-  *    Kick  — sine oscillator with exponential pitch sweep 200→45 Hz,
-  *            long amplitude decay (128 ms tau).  Classic 808-style thump.
-  *    Snare — sine tone at 185 Hz (fast decay 16 ms) mixed with LFSR
-  *            noise (slower decay 64 ms).  Tone gives body, noise gives snap.
-  *    Hi-hat— LFSR noise through a 1-pole HPF (fc approx 3 kHz), short decay
-  *            (32 ms tau) for a metallic closed-hat character.
-  *    Clap  — 3 short noise bursts (2 ms on, 3 ms gap) followed by an
-  *            exp. decaying noise tail (128 ms tau).
-  * 
-  *  Inspired by: https://blog.demofox.org/2015/03/14/diy-synth-basic-drum/
+  * kick: sine sweep 200 down to 50ish hz, xfade on retrigger so it doesnt click
+  *       amp env ~64ms-ish feels punchy enough
+  * snare: 185hz sine (dies fast) + lfsr noise slower tail, body vs snap you know
+  * hat: noise thru 1pole hpf fc aprox 3k short env ~32ms closed hat vibe
+  * clap: 3 little noise blips 2ms on 3ms off then long noisy tail 128ms tau
+  *
+  * took ideas from demofox drum post
+  * https://blog.demofox.org/2015/03/14/diy-synth-basic-drum/
   ******************************************************************************
   */
 
 #include "drum_synth.h"
+#include "stm32f4xx_hal.h"
 #include <string.h>
 
-/* Sine LUT (256 entries, Fixed Point Q15, +/-32767) */
+/* triggers get ORd in from tim6/main, actually applied at top of GetNextSample (same
+ * context as dma audio path) so were not half updating voice structs mid buffer */
+static volatile uint32_t g_pending_triggers;
+
+static inline void pending_or(uint32_t mask)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  g_pending_triggers |= mask;
+  __set_PRIMASK(primask);
+}
+
+static inline uint32_t pending_take_all(void)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  uint32_t p         = g_pending_triggers;
+  g_pending_triggers = 0U;
+  __set_PRIMASK(primask);
+  return p;
+}
+
+/* sine table 256 pts q15 */
 static const int16_t sine_tab[256] = {
         0,    804,   1608,   2410,   3212,   4011,   4808,   5602,
      6393,   7179,   7962,   8739,   9512,  10278,  11039,  11793,
@@ -56,80 +76,80 @@ static const int16_t sine_tab[256] = {
     -6393,  -5602,  -4808,  -4011,  -3212,  -2410,  -1608,   -804,
 };
 
-/* 16-bit maximal-length LFSR (period 2^16-1) */
+/* 16bit mls lfsr period 2^16-1 */
 static uint16_t lfsr = 0xACE1U;
 
 static inline int16_t Noise_Next(void)
 {
-  /* x^16 + x^14 + x^13 + x^11 + 1  (taps 0,2,3,5 in Fibonacci form) */
+  /* poly x^16+x^14+x^13+x^11+1 taps 0,2,3,5 fibonacci style */
   uint16_t bit = (lfsr ^ (lfsr >> 2) ^ (lfsr >> 3) ^ (lfsr >> 5)) & 1U;
   lfsr = (lfsr >> 1) | (bit << 15);
-  return (int16_t)lfsr;   /* reinterpret as signed — uniform over +/-32 k */
+  return (int16_t)lfsr;   /* treat as signed noise-ish */
 }
 
-/* Phase-accumulator helpers */
+/* phase acc stuff */
 /*
- * Phase accumulator is Q16.16.  Top 8 bits index into the 256-entry table.
- *   phase_inc = freq_hz * 256 * 65536 / 16000
- *             = freq_hz * 131072 / 125           (pure integer, no float)
+ * q16.16 phase, high byte indexes sine_tab
+ * inc = hz * 256 * 65536 / 16000 = hz * 131072 / 125 all ints no float thank god
  */
 #define FREQ_TO_INC(hz)  ((uint32_t)((uint32_t)(hz) * 131072U / 125U))
 
-/* Exponential-decay rates (Q16 per-sample multiplier) */
+/* exp decay mults q16 */
 /*
- * env[n+1] = env[n] * RATE >> 16
- * Time constant tau approx 65536 / (65536 − RATE) samples.
- * At 16 kHz: tau_ms approx tau_samples / 16.
+ * env *= RATE each sample (>>16)
+ * tau in samples roughy 65536/(65536-RATE) at 16khz divide by 16 for ms ballpark
  */
-#define DECAY_TAU_256   65280U   /* tau = 256 samp =  16 ms */
-#define DECAY_TAU_512   65408U   /* tau = 512 samp =  32 ms */
-#define DECAY_TAU_1024  65472U   /* tau = 1024 samp = 64 ms */
-#define DECAY_TAU_2048  65504U   /* tau = 2048 samp = 128 ms */
+#define DECAY_TAU_256   65280U   /* 256 samp ~16ms */
+#define DECAY_TAU_512   65408U   /* 512 ~32ms */
+#define DECAY_TAU_1024  65472U   /* 1024 ~64ms */
+#define DECAY_TAU_2048  65504U   /* 2048 ~128ms */
 
-/* Per-instrument tuning */
+/* knobs per drum */
 
-/* Kick — sine + pitch sweep */
+/* kick */
 #define KICK_FREQ_START     FREQ_TO_INC(200)
-#define KICK_FREQ_END       FREQ_TO_INC(45)
-#define KICK_PITCH_SHIFT    9U          /* pitch sweep tau = 512 samp (32 ms) */
-#define KICK_AMP_DECAY      DECAY_TAU_2048
-#define KICK_ATTACK_LEN     48U         /* ~3 ms; quadratic easing softens onset */
+#define KICK_FREQ_END       FREQ_TO_INC(50)
+#define KICK_PITCH_SHIFT    8U          /* sweep speed */
+#define KICK_AMP_DECAY      DECAY_TAU_1024
+#define KICK_ATTACK_LEN     48U         /* ~3ms attack curve */
 
-/* Snare — sine body + noise snap */
+/* snare */
 #define SNARE_TONE_FREQ     FREQ_TO_INC(185)
 #define SNARE_TONE_DECAY    DECAY_TAU_256
 #define SNARE_NOISE_DECAY   DECAY_TAU_1024
 
-/* Hi-hat — HPF noise */
+/* hat */
 #define HIHAT_AMP_DECAY     DECAY_TAU_512
-#define HIHAT_HPF_ALPHA     17726U  /* Q15 LPF coeff for HPF-via-subtraction,
-                                       fc ≈ 3 kHz at 16 kHz Fs */
+#define HIHAT_HPF_ALPHA     17726U  /* lpf coeff for hpf trick ~3k fc @16k */
 
-/* Clap — burst noise + tail */
-#define CLAP_BURST_ON       32U     /* 2 ms on  */
-#define CLAP_BURST_OFF      48U     /* 3 ms gap */
+/* clap */
+#define CLAP_BURST_ON       32U     /* 2ms */
+#define CLAP_BURST_OFF      48U     /* 3ms gap */
 #define CLAP_BURST_PERIOD   (CLAP_BURST_ON + CLAP_BURST_OFF)   /* 80 samp */
 #define CLAP_NUM_BURSTS     3U
 #define CLAP_BURST_TOTAL    (CLAP_NUM_BURSTS * CLAP_BURST_PERIOD)  /* 240 */
 #define CLAP_TAIL_DECAY     DECAY_TAU_2048
 
-/* Envelope floor — below this the voice is silenced (~−54 dB) */
+/* kill voice when env this low ~ -54db or whatever */
 #define ENV_FLOOR  64
 
-/* Per-voice runtime state */
+/* kick retrig: fade old sample out over this many samp (~2ms) stops clicks */
+#define KICK_XFADE_LEN  32U
+
 typedef struct {
   uint8_t  active;
-  uint32_t n;           /* sample counter since trigger                      */
-  int32_t  env;         /* primary envelope   0 … 32767                      */
-  int32_t  env2;        /* secondary envelope (snare noise component)        */
-  uint32_t phase_acc;   /* Q16.16 phase accumulator                          */
-  uint32_t phase_inc;   /* Q16.16 current phase increment (may sweep)        */
-  int32_t  hpf_z1;      /* LPF state for hi-hat HPF-via-subtraction          */
+  uint32_t n;           /* samples since hit */
+  int32_t  env;         /* main env */
+  int32_t  env2;        /* snare noise env */
+  uint32_t phase_acc;   /* osc phase q16.16 */
+  uint32_t phase_inc;   /* step, kick sweeps this */
+  int32_t  hpf_z1;      /* hat lpf state */
+  int32_t  last_out;    /* kick prev out for xfade */
+  int32_t  xfade_val;   /* grabbed at retrig */
+  uint32_t xfade_rem;   /* xfade countdown */
 } DrumVoice_t;
 
 static DrumVoice_t voices[DRUM_COUNT];
-
-/* Individual voice sample generators */
 
 static int32_t Kick_Sample(DrumVoice_t *v)
 {
@@ -140,21 +160,20 @@ static int32_t Kick_Sample(DrumVoice_t *v)
     v->n = kn + 1U;
   }
 
-  /* ---- pitch sweep: exponential decay toward KICK_FREQ_END ---- */
+  /* pitch pulls down toward end freq */
   if (v->phase_inc > KICK_FREQ_END) {
     uint32_t delta = v->phase_inc - KICK_FREQ_END;
     delta -= delta >> KICK_PITCH_SHIFT;
     v->phase_inc = KICK_FREQ_END + delta;
   }
 
-  /* ---- sine oscillator ---- */
+  /* sine */
   uint8_t idx = (uint8_t)(v->phase_acc >> 16);
   v->phase_acc += v->phase_inc;
   int32_t sample = (int32_t)sine_tab[idx];
 
-  /* ---- amplitude envelope ---- */
+  /* amp env */
   sample = (sample * v->env) >> 15;
-  /* Ease-in after each trigger: quadratic is gentler than linear at the very start. */
   if (kn < KICK_ATTACK_LEN) {
     int32_t a = (int32_t)(kn + 1U);
     int32_t d = (int32_t)KICK_ATTACK_LEN * (int32_t)KICK_ATTACK_LEN;
@@ -162,7 +181,19 @@ static int32_t Kick_Sample(DrumVoice_t *v)
   }
   v->env = (int32_t)((uint32_t)v->env * KICK_AMP_DECAY >> 16);
 
-  if (v->env < ENV_FLOOR) { v->active = 0; return 0; }
+  /* xfade old tail so retrig isnt a step */
+  if (v->xfade_rem > 0U) {
+    sample += (v->xfade_val * (int32_t)v->xfade_rem) / (int32_t)KICK_XFADE_LEN;
+    v->xfade_rem--;
+  }
+
+  v->last_out = sample;
+
+  if (v->env < ENV_FLOOR) {
+    v->active   = 0;
+    v->env      = 0;
+    v->last_out = 0;
+  }
   return sample;
 }
 
@@ -170,20 +201,24 @@ static int32_t Snare_Sample(DrumVoice_t *v)
 {
   if (!v->active) return 0;
 
-  /* ---- tonal body (sine at 185 Hz, fast decay) ---- */
+  /* tone */
   uint8_t idx = (uint8_t)(v->phase_acc >> 16);
   v->phase_acc += v->phase_inc;
   int32_t tone = ((int32_t)sine_tab[idx] * v->env) >> 15;
   v->env = (int32_t)((uint32_t)v->env * SNARE_TONE_DECAY >> 16);
 
-  /* ---- noise snap (slower decay) ---- */
+  /* noise */
   int32_t noise = ((int32_t)Noise_Next() * v->env2) >> 15;
   v->env2 = (int32_t)((uint32_t)v->env2 * SNARE_NOISE_DECAY >> 16);
 
-  if (v->env < ENV_FLOOR && v->env2 < ENV_FLOOR) { v->active = 0; return 0; }
-
-  /* 25 % tone + 75 % noise — gives body without masking the snap */
-  return (tone + 3 * noise) >> 2;
+ /* 1 part tone 3 parts noise (>>2) */
+  int32_t out = (tone + 3 * noise) >> 2;
+  if (v->env < ENV_FLOOR && v->env2 < ENV_FLOOR) {
+    v->active = 0;
+    v->env    = 0;
+    v->env2   = 0;
+  }
+  return out;
 }
 
 static int32_t HiHat_Sample(DrumVoice_t *v)
@@ -192,16 +227,19 @@ static int32_t HiHat_Sample(DrumVoice_t *v)
 
   int32_t raw = (int32_t)Noise_Next();
 
-  /* ---- 1-pole HPF via LPF subtraction (fc approx 3 kHz) ---- */
+  /* hpf = raw - lpf(raw) kinda thing */
   int32_t diff = raw - v->hpf_z1;
   v->hpf_z1 += ((int32_t)HIHAT_HPF_ALPHA * diff) >> 15;
   int32_t hpf = raw - v->hpf_z1;
 
-  /* ---- amplitude envelope ---- */
+  /* env */
   hpf = (hpf * v->env) >> 15;
   v->env = (int32_t)((uint32_t)v->env * HIHAT_AMP_DECAY >> 16);
 
-  if (v->env < ENV_FLOOR) { v->active = 0; return 0; }
+  if (v->env < ENV_FLOOR) {
+    v->active = 0;
+    v->env    = 0;
+  }
   return hpf;
 }
 
@@ -213,35 +251,42 @@ static int32_t Clap_Sample(DrumVoice_t *v)
   int32_t env;
 
   if (n < CLAP_BURST_TOTAL) {
-    /* ---- burst phase: short noise bursts separated by silence ---- */
+    /* blip blip blip */
     uint32_t pos = n % CLAP_BURST_PERIOD;
     if (pos < CLAP_BURST_ON) {
       env = 32767;
     } else {
-      return 0;            /* silence between bursts */
+      return 0;            /* gap */
     }
   } else {
-    /* ---- tail phase: exp. decaying noise ---- */
+    /* tail decays */
     env = v->env;
     v->env = (int32_t)((uint32_t)env * CLAP_TAIL_DECAY >> 16);
-    if (env < ENV_FLOOR) { v->active = 0; return 0; }
   }
 
-  return ((int32_t)Noise_Next() * env) >> 15;
+  int32_t out = ((int32_t)Noise_Next() * env) >> 15;
+  if (n >= CLAP_BURST_TOTAL && v->env < ENV_FLOOR) {
+    v->active = 0;
+    v->env    = 0;
+  }
+  return out;
 }
-
-/* Public API */
 
 void DrumSynth_Init(void)
 {
   memset(voices, 0, sizeof(voices));
   lfsr = 0xACE1U;
+  (void)pending_take_all();
 }
 
-void DrumSynth_Trigger(DrumType_t drum)
+static void DrumSynth_DoTrigger(DrumType_t drum)
 {
-  if (drum >= DRUM_COUNT) return;
   DrumVoice_t *v = &voices[drum];
+
+  if (drum == DRUM_KICK && v->active) {
+    v->xfade_val = v->last_out;
+    v->xfade_rem = KICK_XFADE_LEN;
+  }
 
   v->active = 1;
   v->n      = 0;
@@ -251,9 +296,6 @@ void DrumSynth_Trigger(DrumType_t drum)
 
   switch (drum) {
     case DRUM_KICK:
-      /* Always reset phase. Keeping phase_acc while slamming phase_inc back to
-         KICK_FREQ_START (200 Hz) from a sweeps-near-end value (approx 45 Hz) causes a
-         huge instantaneous dphi/dt step —> heard as buzz/static on fast kicks. */
       v->phase_acc = 0;
       v->phase_inc = KICK_FREQ_START;
       break;
@@ -268,15 +310,35 @@ void DrumSynth_Trigger(DrumType_t drum)
   }
 }
 
+static void DrumSynth_FlushPending(void)
+{
+  uint32_t p = pending_take_all();
+  for (uint32_t t = 0U; t < (uint32_t)DRUM_COUNT; t++) {
+    if ((p & (1U << t)) != 0U) {
+      DrumSynth_DoTrigger((DrumType_t)t);
+    }
+  }
+}
+
+void DrumSynth_Trigger(DrumType_t drum)
+{
+  if (drum >= DRUM_COUNT) {
+    return;
+  }
+  pending_or(1U << (unsigned)drum);
+}
+
 int16_t DrumSynth_GetNextSample(void)
 {
+  DrumSynth_FlushPending();
+
   int32_t mix = 0;
   mix += Kick_Sample(&voices[DRUM_KICK]);
   mix += Snare_Sample(&voices[DRUM_SNARE]);
   mix += HiHat_Sample(&voices[DRUM_HIHAT]);
   mix += Clap_Sample(&voices[DRUM_CLAP]);
 
-  mix >>= 1;   /* 6 dB headroom for mult-voice overlap */
+  mix >>= 2;
 
   if (mix >  32767) mix =  32767;
   if (mix < -32768) mix = -32768;
