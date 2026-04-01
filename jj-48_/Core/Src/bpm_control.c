@@ -24,7 +24,6 @@ uint32_t BpmControl_ReadPotRaw(void)
   if (s_hadc == NULL) {
     return 0U;
   }
-  /* Same sequence as Core/adc_reference/main.c (no HAL_ADC_Stop between reads). */
   if (HAL_ADC_Start(s_hadc) != HAL_OK) {
     return 0U;
   }
