@@ -21,7 +21,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include "drum_synth.h"
@@ -81,10 +80,6 @@ static void MX_I2C2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void print_msg(char * msg) {
-	HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
-}
-
 int8_t current_col = -1;
 int8_t user_button_pressed = -1;
 char key_pressed = '\0';
@@ -108,9 +103,6 @@ void reset_pattern(void) {
 			pattern[i][j] = NOTE_OFF;
 		}
 	}
-	char message[100];
-	sprintf(message, "Initialized empty pattern.\r\n");
-	print_msg(message);
 }
 
 void grid_update(char key) {
@@ -216,6 +208,16 @@ HAL_StatusTypeDef flash_erase_sector_7(void) {
   return ret;
 }
 
+static void i2s_dma_restart_prefill(void)
+{
+	for (uint32_t i = 0U; i < AUDIO_FRAMES_PER_BUF; i++) {
+		uint16_t s = (uint16_t)DrumSynth_GetNextSample();
+		i2s_audio_buf[i * 2U] = s;
+		i2s_audio_buf[i * 2U + 1U] = s;
+	}
+	(void)HAL_I2S_Transmit_DMA(&hi2s3, i2s_audio_buf, AUDIO_FRAMES_PER_BUF * 2U);
+}
+
 // writes sequence data to sector 7 (flash ADDR: 0x08060000)
 // this sector safe as is far beyond where program code is stored
 HAL_StatusTypeDef write_data_to_flash(void) {
@@ -228,15 +230,18 @@ HAL_StatusTypeDef write_data_to_flash(void) {
 	}
 	data.valid = 0xDEADBEEF; // valid pattern
 
+	(void)HAL_I2S_DMAStop(&hi2s3);
+
 	ret = flash_erase_sector_7();
-	if (ret != HAL_OK) return ret;
+	if (ret == HAL_OK) {
+		ret = flash_write_bytes(
+			FLASH_USER_START_ADDR,
+			(uint32_t *)&data,
+			sizeof(SaveFlashData) / 4U
+		);
+	}
 
-	ret = flash_write_bytes(
-		FLASH_USER_START_ADDR,
-		(uint32_t*)&data,
-		sizeof(SaveFlashData) / 4 // get number of words, should be (36 bytes / 4) = 9
-	);
-
+	i2s_dma_restart_prefill();
 	return ret;
 }
 
@@ -304,15 +309,11 @@ int main(void)
   // Load saved sequence from flash
   SaveFlashData saved_sequence;
   if (flash_read_data(&saved_sequence) == HAL_OK) {
-		// copy saved data into pattern
 		for (uint32_t i = 0; i < DRUM_COUNT; i++) {
 			for (uint32_t j = 0; j < SEQUENCER_NUM_STEPS; j++) {
 				pattern[i][j] = saved_sequence.pattern[i][j];
 			}
 		}
-		char message[100];
-		sprintf(message, "Loaded pattern from flash.\r\n");
-		print_msg(message);
   } else {
   	// initialize empty pattern
   	reset_pattern();
@@ -328,15 +329,9 @@ int main(void)
     BpmControl_Poll();
     oled_update();
 
-    if(user_button_pressed == 1) {
+    if (user_button_pressed == 1) {
     	user_button_pressed = -1;
-    	char message[100];
-    	if(write_data_to_flash() != HAL_OK) {
-				sprintf(message, "write_data_to_flash failed\n");
-    	} else {
-				sprintf(message, "write_data_to_flash OK\n");
-    	}
-    	print_msg(message);
+    	(void)write_data_to_flash();
     }
     /* USER CODE END WHILE */
 

@@ -58,7 +58,6 @@ uint32_t last_time_col[3] = {0, 0, 0};
 extern DMA_HandleTypeDef hdma_spi3_tx;
 extern TIM_HandleTypeDef htim6;
 /* USER CODE BEGIN EV */
-extern void print_msg(char * msg);
 extern int8_t current_col;
 extern int8_t user_button_pressed;
 /* USER CODE END EV */
@@ -227,9 +226,6 @@ void EXTI15_10_IRQHandler(void)
 		if ((now - last_time_col[0]) >= DEBOUNCE_MS) {
 			last_time_col[0] = now;
 			current_col = 0;
-			print_msg("COL1 Interrupt\r\n");
-		} else {
-			print_msg("debounce1\r\n");
 		}
 		__HAL_GPIO_EXTI_CLEAR_IT(COL1_Pin);
 	}
@@ -238,9 +234,6 @@ void EXTI15_10_IRQHandler(void)
 		if ((now - last_time_col[1]) >= DEBOUNCE_MS) {
 			last_time_col[1] = now;
 			current_col = 1;
-			print_msg("COL2 Interrupt\r\n");
-		} else {
-			print_msg("debounce2\r\n");
 		}
 		__HAL_GPIO_EXTI_CLEAR_IT(COL2_Pin);
 	}
@@ -249,17 +242,12 @@ void EXTI15_10_IRQHandler(void)
 		if ((now - last_time_col[2]) >= DEBOUNCE_MS) {
 			last_time_col[2] = now;
 			current_col = 2;
-			print_msg("COL3 Interrupt\r\n");
-		} else {
-			print_msg("debounce3\r\n");
 		}
 		__HAL_GPIO_EXTI_CLEAR_IT(COL3_Pin);
 	}
 
   if (__HAL_GPIO_EXTI_GET_FLAG(USER_Btn_Pin)) {
   	user_button_pressed = 1;
-		print_msg("User Button Pressed\r\n");
-		//HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	}
 
   /* USER CODE END EXTI15_10_IRQn 0 */
